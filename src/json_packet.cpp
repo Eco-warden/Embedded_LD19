@@ -1,0 +1,207 @@
+/*
+ * Copyright (c) 2026 김승연
+ *
+ * This software is released under the MIT License.
+ * See LICENSE file in the project root for details.
+ *
+ * Project: 데이터 무결성 보증형 디지털 트윈 관제 플랫폼
+ * Module : EMBEDDED - LD19 LiDAR 센서 인터페이스 및 객체 탐지
+ */
+
+/**
+ * @file  json_packet.cpp
+ * @brief nlohmann/json 기반 클러스터+이벤트 JSON 직렬화 및 UDP 전송
+ * @date  2026
+ */
+
+#include "json_packet.h"
+
+#include <cstdio>
+#include <ctime>
+#include <chrono>
+#include <algorithm>
+#include <cmath>
+
+using json = nlohmann::json;
+
+namespace ld19 {
+
+// ── 생성자 ──────────────────────────────────────────────────────────
+JsonPacketSender::JsonPacketSender(UdpSender& udp) : udp_(udp) {}
+
+// ── epoch ms → ISO 8601 ─────────────────────────────────────────────
+std::string JsonPacketSender::MsToIso8601(uint64_t epoch_ms) {
+    time_t sec = static_cast<time_t>(epoch_ms / 1000);
+    uint32_t ms_part = static_cast<uint32_t>(epoch_ms % 1000);
+
+    struct tm utc{};
+    gmtime_r(&sec, &utc);
+
+    char buf[64];
+    std::snprintf(buf, sizeof(buf),
+                  "%04d-%02d-%02dT%02d:%02d:%02d.%03uZ",
+                  utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday,
+                  utc.tm_hour, utc.tm_min, utc.tm_sec, ms_part);
+    return buf;
+}
+
+// ── NowMs ───────────────────────────────────────────────────────────
+uint64_t JsonPacketSender::NowMs() {
+    using namespace std::chrono;
+    return static_cast<uint64_t>(
+        duration_cast<milliseconds>(
+            system_clock::now().time_since_epoch()
+        ).count()
+    );
+}
+
+// ── 클러스터 타입 판별 ──────────────────────────────────────────────
+//   클러스터 centroid에 가장 가까운 트랙을 찾아서
+//   Departed 상태면 "abandoned", 아니면 "normal"
+std::string JsonPacketSender::ResolveType(const Cluster& cluster,
+                                          const std::vector<Track>& tracks) {
+    if (tracks.empty()) return "normal";
+
+    double best_sq = 1e18;
+    TrackState best_state = TrackState::Moving;
+
+    for (const auto& tr : tracks) {
+        double dx = cluster.centroid_x_mm - tr.x_mm;
+        double dy = cluster.centroid_y_mm - tr.y_mm;
+        double d2 = dx * dx + dy * dy;
+        if (d2 < best_sq) {
+            best_sq    = d2;
+            best_state = tr.state;
+        }
+    }
+
+    return (best_state == TrackState::Departed) ? "abandoned" : "normal";
+}
+
+// ── Serialize: JSON 직렬화 ──────────────────────────────────────────
+//
+//   출력 형식:
+//   {
+//     "frame_id": 42,
+//     "timestamp": "2026-03-27T12:34:56.789Z",
+//     "clusters": [
+//       {"id": 0, "x": 1200.0, "y": 350.0, "count": 12, "type": "normal"},
+//       {"id": 1, "x": 800.0,  "y": 200.0, "count": 8,  "type": "abandoned"}
+//     ],
+//     "event": {
+//       "type": "abandoned",
+//       "x": 800.0,
+//       "y": 200.0,
+//       "cluster_id": 1,
+//       "timestamp": "2026-03-27T12:34:56.789Z"
+//     }
+//   }
+//
+std::string JsonPacketSender::Serialize(
+    const std::vector<Cluster>& clusters,
+    const std::vector<Track>& tracks,
+    const std::vector<DepartureEvent>& events,
+    uint32_t frame_id)
+{
+    uint64_t now = NowMs();
+
+    // ── clusters 배열 빌드 ──────────────────────────────────────────
+    json j_clusters = json::array();
+
+    for (size_t i = 0; i < clusters.size(); ++i) {
+        const auto& cl = clusters[i];
+
+        json j_cl;
+        j_cl["id"]    = static_cast<int>(i);
+        j_cl["x"]     = std::round(cl.centroid_x_mm * 10.0) / 10.0;  // 소수점 1자리
+        j_cl["y"]     = std::round(cl.centroid_y_mm * 10.0) / 10.0;
+        j_cl["count"] = static_cast<int>(cl.points.size());
+        j_cl["type"]  = ResolveType(cl, tracks);
+
+        j_clusters.push_back(std::move(j_cl));
+    }
+
+    // ── event 객체 빌드 (최신 이벤트 1개, 없으면 null) ──────────────
+    json j_event = nullptr;
+
+    if (!events.empty()) {
+        const auto& evt = events.back();  // 가장 최근 이벤트
+        j_event = {
+            {"type",       "abandoned"},
+            {"x",          std::round(evt.x_mm * 10.0) / 10.0},
+            {"y",          std::round(evt.y_mm * 10.0) / 10.0},
+            {"cluster_id", static_cast<int>(evt.track_id)},
+            {"timestamp",  MsToIso8601(evt.timestamp_ms)}
+        };
+    }
+
+    // ── 최종 패킷 조립 ─────────────────────────────────────────────
+    json packet;
+    packet["frame_id"]  = frame_id;
+    packet["timestamp"] = MsToIso8601(now);
+    packet["clusters"]  = std::move(j_clusters);
+    packet["event"]     = std::move(j_event);
+
+    return packet.dump();
+}
+
+// ── Send: 직렬화 + 크기 검증 + UDP 전송 ────────────────────────────
+//
+//   65507 bytes 초과 시:
+//     1. 클러스터를 포인트 수 내림차순 정렬
+//     2. 뒤에서부터 하나씩 제거하며 크기 확인
+//     3. 그래도 초과하면 전송 포기
+//
+bool JsonPacketSender::Send(const std::vector<Cluster>& clusters,
+                            const std::vector<Track>& tracks,
+                            const std::vector<DepartureEvent>& events,
+                            uint32_t frame_id)
+{
+    // 1) 전체 직렬화 시도
+    std::string payload = Serialize(clusters, tracks, events, frame_id);
+
+    // 2) 크기 제한 체크
+    if (payload.size() <= UDP_MAX_DGRAM) {
+        if (udp_.SendBuffer(payload.data(), payload.size())) {
+            sent_count_++;
+            return true;
+        }
+        drop_count_++;
+        return false;
+    }
+
+    // 3) 초과 → 클러스터 수를 줄여서 재직렬화
+    //    포인트 수 내림차순 정렬 후, 중요한 (큰) 클러스터만 유지
+    std::vector<Cluster> trimmed = clusters;
+    std::sort(trimmed.begin(), trimmed.end(),
+              [](const Cluster& a, const Cluster& b) {
+                  return a.points.size() > b.points.size();
+              });
+
+    while (!trimmed.empty()) {
+        trimmed.pop_back();
+        trunc_count_++;
+
+        payload = Serialize(trimmed, tracks, events, frame_id);
+
+        if (payload.size() <= UDP_MAX_DGRAM) {
+            std::fprintf(stderr,
+                "[JSON] Truncated to %zu clusters (payload %zu bytes)\n",
+                trimmed.size(), payload.size());
+
+            if (udp_.SendBuffer(payload.data(), payload.size())) {
+                sent_count_++;
+                return true;
+            }
+            drop_count_++;
+            return false;
+        }
+    }
+
+    // 클러스터 0개로도 초과하는 경우는 사실상 불가
+    std::fprintf(stderr, "[JSON] Cannot fit packet under 65507 bytes\n");
+    drop_count_++;
+    return false;
+}
+
+} // namespace ld19
