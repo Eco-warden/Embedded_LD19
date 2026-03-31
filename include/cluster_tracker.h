@@ -96,8 +96,23 @@ struct Track {
     bool       dump_alert_fired   = false; // 투기 확정 알림 발화 여부
     uint32_t   suspect_confirm_count = 0;  // 분리 후 독립 존재 프레임 카운터
 
-    // ── 궤적 이력 (투기 분리 감지 강화) ──────────────────────────────
+    // -- 궤적 이력 (투기 분리 감지 강화) --
     std::vector<std::pair<double,double>> position_history;  // 최근 N 프레임 위치
+
+    // -- 폭 변화 추적 (투기 물체 분리 보조 신호) --
+    double     prev_width_mm        = 0.0;   // 이전 프레임 클러스터 폭
+    bool       width_drop_detected  = false; // 폭 급감 이벤트 감지 플래그
+    double     width_drop_x_mm      = 0.0;   // 폭 감소 발생 시점 위치 X
+    double     width_drop_y_mm      = 0.0;   // 폭 감소 발생 시점 위치 Y
+
+    // -- 속도 벡터 추적 (투사 궤적 분석) --
+    double     vx_mm                = 0.0;   // 현재 프레임 X 속도 (mm/frame)
+    double     vy_mm                = 0.0;   // 현재 프레임 Y 속도 (mm/frame)
+
+    // -- 클러스터 분열 감지 --
+    bool       split_detected       = false; // 이 트랙에서 클러스터 분열이 발생했는지
+    double     split_x_mm           = 0.0;   // 분열 위치 X
+    double     split_y_mm           = 0.0;   // 분열 위치 Y
 };
 
 // ── 추적기 파라미터 ──────────────────────────────────────────────────
@@ -120,10 +135,22 @@ struct TrackerParams {
     uint32_t separation_confirm_frames     = 5;      // 분리 감지 후 이 프레임 동안 독립 존재해야 투기 의심 확정
     double   leg_proximity_radius_mm       = 350.0;  // 확정 단계에서 이 거리 내 사람 트랙 있으면 다리로 간주
 
-    // ── 궤적 이력 + 트랙 복구 파라미터 ────────────────────────────────
+    // -- 궤적 이력 + 트랙 복구 파라미터 --
     uint32_t position_history_size         = 30;     // 보존할 최근 위치 수 (궤적 기반 분리 감지)
     double   recovery_max_dist_mm          = 600.0;  // 잠시 lost된 트랙 복구 최대 거리 (mm)
     uint32_t recovery_max_lost_frames      = 3;      // 복구 허용 최대 lost 프레임 수
+
+    // -- 폭 감소 감지 (보조 신호) --
+    double   width_drop_threshold_mm       = 40.0;   // 1프레임에 이 값 이상 폭 감소 시 감지
+
+    // -- 점구름 개수 필터 --
+    size_t   min_dump_candidate_points     = 3;      // 투기 후보 최소 점구름 수
+
+    // -- 투기 주체 이탈 확인 --
+    double   person_depart_dist_mm         = 500.0;  // 주체가 투기물에서 이 거리 이상 떨어져야 확정
+
+    // -- 속도 벡터 분석 (투사 궤적) --
+    double   receding_velocity_threshold   = 20.0;   // 분리 객체가 사람에게서 멀어지는 최소 속도 (mm/frame)
 };
 
 // ── 이탈 이벤트 콜백 타입 ────────────────────────────────────────────
@@ -190,6 +217,13 @@ private:
         const std::vector<Cluster>& clusters,
         const std::vector<int>& cluster_to_track,
         std::vector<bool>& cluster_claimed
+    );
+
+    // 매칭 후 클러스터 분열 (1 트랙 → 2 클러스터) 감지
+    void DetectClusterSplit(
+        const std::vector<Cluster>& clusters,
+        const std::vector<int>& cluster_to_track,
+        const std::vector<bool>& track_matched
     );
 
     // 투기물 정지 상태 확인 → 투기 확정

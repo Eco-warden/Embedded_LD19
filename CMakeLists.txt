@@ -63,6 +63,7 @@ add_executable(ld19_lidar_app
   src/event_notifier.cpp
   src/udp_sender.cpp
   src/json_packet.cpp
+  src/pir_sensor.cpp
   src/main.cpp
 )
 
@@ -87,6 +88,7 @@ add_executable(ld19_sim
   src/udp_sender.cpp
   src/json_packet.cpp
   src/ld19_lidar.cpp
+  src/pir_sensor.cpp
   src/sim_main.cpp
 )
 

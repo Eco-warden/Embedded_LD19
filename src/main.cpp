@@ -35,6 +35,7 @@
 #include "event_notifier.h"
 #include "udp_sender.h"
 #include "json_packet.h"
+#include "pir_sensor.h"
 
 #include <csignal>
 #include <cstdio>
@@ -143,11 +144,11 @@ int main(int argc, char* argv[]) {
     fp.fov_max_deg          = 270.0f;
     fp.min_cluster_width_mm = 30.0;
     fp.max_cluster_width_mm = 800.0;
-    fp.merge_radius_mm      = 250.0;   // 450->250mm: 과도한 병합 방지 (쓰레기가 사람으로 흡수되는 것 차단)
+    fp.merge_radius_mm      = 350.0;   // 250->350mm: 다리 병합 우선 (보행자 양다리 간격 대응)
 
     ld19::DBSCANParams dp;
-    dp.epsilon_mm = 150.0;  // 200->150: 점구름 연결 범위 정상화
-    dp.min_points = 3;  // 5→3: 작은 물체(봉투 등) 감지율 향상
+    dp.epsilon_mm = 250.0;  // 150->250: 점구름 간 간격이 있어도 하나로 연결
+    dp.min_points = 3;
 
     ld19::ScanProcessor processor(fp, dp);
 
@@ -163,20 +164,26 @@ int main(int argc, char* argv[]) {
     ld19::TrackerParams tp;
     tp.stationary_threshold_mm     = 30.0;
     tp.departure_frame_count       = 3;
-    tp.association_max_dist_mm     = 400.0;
-    tp.lost_age_limit              = 10;
+    tp.association_max_dist_mm     = 500.0;  // 400->500: 다리 둘 다 같은 트랙으로 잡는 여유 확보
+    tp.lost_age_limit              = 15;     // 10->15: 잠시 놓쳐도 즉시 아이디 삭제 방지
     tp.enable_dumping_detection    = true;
-    tp.min_walk_dist_mm            = 100.0; // 150->100: 더욱 짧은 이동도 허용
-    tp.min_age_for_dump            = 5;     
-    tp.dump_stationary_frame_count = 30;
-    tp.separation_max_dist_mm      = 600.0; // 400->600: 쓰레기 분리 시 과거 궤적 참조 범위를 대폭 확대 (가장 중요)
-    tp.separation_min_dist_from_current_mm = 150.0;  
-    tp.min_dump_candidate_width_mm = 30.0;           
-    tp.separation_confirm_frames   = 3;              
-    tp.leg_proximity_radius_mm     = 200.0;          // 250->200: 분리된 쓰레기가 다시 다리로 오인되는 상황 차단 추가 완화
-    tp.position_history_size       = 30;             // 궤적 이력 보존 프레임 수
-    tp.recovery_max_dist_mm        = 600.0;          // 잠시 lost된 트랙 복구 최대 거리
-    tp.recovery_max_lost_frames    = 3;              // 복구 허용 최대 lost 프레임
+    tp.min_walk_dist_mm            = 100.0;
+    tp.min_age_for_dump            = 5;
+    tp.dump_stationary_frame_count = 20;     // 50->20: 2초 정지 확인 후 빠르게 확정 (카메라 촬영 대응)
+    tp.separation_max_dist_mm      = 800.0;
+    tp.separation_min_dist_from_current_mm = 300.0;
+    tp.min_dump_candidate_width_mm = 50.0;
+    tp.separation_confirm_frames   = 10;
+    tp.leg_proximity_radius_mm     = 200.0;
+    tp.position_history_size       = 50;
+    tp.recovery_max_dist_mm        = 600.0;
+    tp.recovery_max_lost_frames    = 5;
+
+    // 알고리즘 개선 파라미터
+    tp.width_drop_threshold_mm     = 40.0;   // 폭 40mm 이상 급감 시 투기 보조 신호
+    tp.min_dump_candidate_points   = 3;      // 점구름 3개 미만 극소 클러스터 노이즈 제거
+    tp.person_depart_dist_mm       = 500.0;  // 주체가 50cm 이상 떠나야 투기 확정
+    tp.receding_velocity_threshold = 20.0;   // 분리 객체가 사람에게서 멀어지는 최소 속도 (mm/frame)
 
     ld19::ClusterTracker tracker(tp);
 
@@ -255,6 +262,19 @@ int main(int argc, char* argv[]) {
 
     std::printf("[INFO] LiDAR started. Press Ctrl+C to stop.\n\n");
 
+    // ── PIR 센서 초기화 ───────────────────────────────────────────────────
+    ld19::PirSensorConfig pir_cfg;
+    pir_cfg.gpio_pin        = 17;    // BCM GPIO 17
+    pir_cfg.active_high     = true;  // HIGH = 모션 감지
+    pir_cfg.debounce_frames = 3;     // 3프레임 디바운스
+    pir_cfg.holdoff_frames  = 50;    // 모션 감지 후 최소 5초 유지 (10Hz 기준)
+
+    ld19::PirSensor pir(pir_cfg);
+    if (!pir.Init()) {
+        std::fprintf(stderr, "[WARN] PIR sensor init failed — "
+                             "proceeding without PIR gating\n");
+    }
+
     // ── 메인 루프 ────────────────────────────────────────────────────
     uint32_t frame_count = 0;
 
@@ -309,10 +329,18 @@ int main(int argc, char* argv[]) {
                                cl.points.begin(), cl.points.end());
         }
 
-        // 3) 클러스터 추적 + 이탈/투기 감지
+        // 3) PIR 센서 상태 개신
+        pir.Read();
+
+        // 4) 클러스터 추적 + 이탈/투기 감지
         std::vector<ld19::DepartureEvent> dep_events;
         std::vector<ld19::DumpingEvent>   dump_events;
         tracker.Update(clusters, dep_events, dump_events);
+
+        // PIR 미감지 상태에서는 투기 이벤트를 무시 (열원 없으면 사람이 아님)
+        if (!pir.IsMotionDetected()) {
+            dump_events.clear();
+        }
 
         // 4) 이탈 이벤트 → HTTP POST (테스트를 위해 비활성화)
         for (const auto& evt : dep_events) {
@@ -367,14 +395,15 @@ int main(int argc, char* argv[]) {
 
     // ── 정리 ─────────────────────────────────────────────────────────
     std::printf("\n[INFO] Stopping...\n");
-    notifier.StopRetryThread();
+    // HTTP 전송 비활성화 상태이므로 종료 시 큐 밀어넣기 차단 (테스트용)
+    // notifier.StopRetryThread();
     lidar.Stop();
     udp.Close();
 
-    size_t final_flush = notifier.FlushQueue();
-    if (final_flush > 0) {
-        std::printf("[INFO] Final flush: %zu events resent\n", final_flush);
-    }
+    // size_t final_flush = notifier.FlushQueue();
+    // if (final_flush > 0) {
+    //     std::printf("[INFO] Final flush: %zu events resent\n", final_flush);
+    // }
 
     std::printf("[INFO] Done.\n");
     return 0;

@@ -116,7 +116,62 @@ void ClusterTracker::AssociateGreedy(
     }
 }
 
-// ── 미매칭 클러스터에서 투기 의심 물체 분리 감지 ────────────────────
+// -- 클러스터 분열 감지 (Cluster Splitting) --
+//
+//   매칭 후, 각 트랙에 대해 매칭되지 않은 클러스터 중
+//   트랙의 현재 위치 근처(트랙의 폭 + 여유)에 있는 것이 있으면
+//   "1개 클러스터 → 2개 분열" 이벤트로 판정.
+//   이 신호는 DetectSeparation에서 분리 판정 시 가중치로 사용.
+//
+void ClusterTracker::DetectClusterSplit(
+    const std::vector<Cluster>& clusters,
+    const std::vector<int>& cluster_to_track,
+    const std::vector<bool>& track_matched)
+{
+    if (!params_.enable_dumping_detection) return;
+
+    // 모든 트랙의 split 플래그 초기화
+    for (auto& tr : tracks_) {
+        tr.split_detected = false;
+    }
+
+    for (size_t t = 0; t < tracks_.size(); ++t) {
+        if (!track_matched[t]) continue;
+        auto& tr = tracks_[t];
+        if (tr.is_dumped_item || tr.is_dump_suspect) continue;
+        if (tr.cumulative_dist_mm < params_.min_walk_dist_mm) continue;
+
+        // 이 트랙에 매칭된 클러스터를 찾아 기준점 설정
+        double base_x = tr.x_mm;
+        double base_y = tr.y_mm;
+
+        // 분열 감지 반경: 트랙 폭 + 여유 (변경 가능)
+        double split_radius = tr.width_mm + 200.0;  // 폭 + 20cm 여유
+        double split_radius_sq = split_radius * split_radius;
+
+        for (size_t c = 0; c < clusters.size(); ++c) {
+            if (cluster_to_track[c] != -1) continue;  // 이미 매칭된 것 제외
+            if (clusters[c].points.size() < params_.min_dump_candidate_points) continue;
+            if (clusters[c].width_mm < params_.min_dump_candidate_width_mm) continue;
+
+            double dx = clusters[c].centroid_x_mm - base_x;
+            double dy = clusters[c].centroid_y_mm - base_y;
+            double dist_sq = dx * dx + dy * dy;
+
+            if (dist_sq < split_radius_sq) {
+                tr.split_detected = true;
+                tr.split_x_mm = clusters[c].centroid_x_mm;
+                tr.split_y_mm = clusters[c].centroid_y_mm;
+                std::printf("[INFO] 클러스터 분열 감지: "
+                            "ID %u → 분열 위치 (%.0f, %.0f)mm\n",
+                            tr.id, tr.split_x_mm, tr.split_y_mm);
+                break;  // 트랙당 1개만 감지
+            }
+        }
+    }
+}
+
+// -- 미매칭 클러스터에서 투기 의심 물체 분리 감지 --
 //
 //   개선된 분리 감지 로직:
 //     (1) 트랙의 궤적 이력(position_history) 근처에 나타남 — 단일 prev 대신 전체 궤적
@@ -153,6 +208,9 @@ void ClusterTracker::DetectSeparation(
 
         // 조건 (3): 클러스터 폭 최소 기준
         if (clusters[c].width_mm < params_.min_dump_candidate_width_mm) continue;
+
+        // 조건 (4): 점구름 개수 최소 기준 (노이즈 필터)
+        if (clusters[c].points.size() < params_.min_dump_candidate_points) continue;
 
         // 오인식 방지: 최근 lost된 일반 트랙 위치와 겹치면 기존 물체 재등장이므로 건너뜀
         bool matches_lost_track = false;
@@ -217,7 +275,44 @@ void ClusterTracker::DetectSeparation(
             if (is_separation) break;
         }
 
-        if (!is_separation) continue;  // 분리 후보만 claim (비후보는 step 6에서 처리)
+        if (!is_separation) {
+            // 폭 감소 보조 신호
+            for (const auto& tr : tracks_) {
+                if (!tr.width_drop_detected) continue;
+                if (tr.is_dumped_item || tr.is_dump_suspect) continue;
+
+                double dwx = clusters[c].centroid_x_mm - tr.width_drop_x_mm;
+                double dwy = clusters[c].centroid_y_mm - tr.width_drop_y_mm;
+                if (dwx * dwx + dwy * dwy < sep_prev_sq) {
+                    is_separation = true;
+                    person_id = static_cast<int>(tr.id);
+                    std::printf("[INFO] 폭-감소 위치 기반 분리 감지 "
+                                "(주체 ID: %d)\n", person_id);
+                    break;
+                }
+            }
+        }
+
+        if (!is_separation) {
+            // 클러스터 분열 보조 신호: 트랙의 split_detected 위치와 일치하면 분리 판정
+            for (const auto& tr : tracks_) {
+                if (!tr.split_detected) continue;
+                if (tr.is_dumped_item || tr.is_dump_suspect) continue;
+
+                double dsx = clusters[c].centroid_x_mm - tr.split_x_mm;
+                double dsy = clusters[c].centroid_y_mm - tr.split_y_mm;
+                // 분열 위치와 150mm 이내면 일치
+                if (dsx * dsx + dsy * dsy < 150.0 * 150.0) {
+                    is_separation = true;
+                    person_id = static_cast<int>(tr.id);
+                    std::printf("[INFO] 클러스터 분열 기반 분리 감지 "
+                                "(주체 ID: %d)\n", person_id);
+                    break;
+                }
+            }
+        }
+
+        if (!is_separation) continue;
 
         Track new_track{};
         new_track.id                    = AllocId();
@@ -270,9 +365,10 @@ void ClusterTracker::CheckDumpingConfirmation(std::vector<DumpingEvent>& dump_ev
         if (tr.dump_alert_fired)    continue;
         if (tr.stationary_count < params_.dump_stationary_frame_count) continue;
 
-        // 투기 주체 트랙 찾기
-        double p_x = 0.0, p_y = 0.0, p_cum = 0.0;
+        // 투기 주체 이탈 확인: 주체가 투기물에서 충분히 멀어졌거나 FOV를 떠났는지 확인
+        bool person_departed = false;
         bool person_found = false;
+        double p_x = 0.0, p_y = 0.0, p_cum = 0.0;
 
         for (const auto& p : tracks_) {
             if (static_cast<int>(p.id) == tr.source_id) {
@@ -280,18 +376,30 @@ void ClusterTracker::CheckDumpingConfirmation(std::vector<DumpingEvent>& dump_ev
                 p_y   = p.y_mm;
                 p_cum = p.cumulative_dist_mm;
                 person_found = true;
+
+                // 주체와 투기물 간 거리 계산
+                double dx = p.x_mm - tr.x_mm;
+                double dy = p.y_mm - tr.y_mm;
+                double dist = std::sqrt(dx * dx + dy * dy);
+                if (dist >= params_.person_depart_dist_mm) {
+                    person_departed = true;
+                }
                 break;
             }
         }
 
         if (!person_found) {
-            // 주체가 FOV를 벗어남 — 분리 시점에 저장한 위치로 이벤트 생성
+            // 주체가 FOV를 떠났음 (이탈 처리)
+            person_departed = true;
             std::fprintf(stderr, "[WARN] 투기 주체(ID: %d) 소실 — 저장된 위치로 이벤트 생성\n",
                          tr.source_id);
             p_x   = tr.source_x_mm;
             p_y   = tr.source_y_mm;
             p_cum = tr.source_cumulative_dist_mm;
         }
+
+        // 주체가 아직 근처에 있으면 확정을 보류
+        if (!person_departed) continue;
 
         DumpingEvent evt;
         evt.person_track_id          = static_cast<uint32_t>(tr.source_id);
@@ -335,6 +443,9 @@ void ClusterTracker::Update(const std::vector<Cluster>& clusters,
     std::vector<bool> track_matched;
     AssociateGreedy(clusters, cluster_to_track, track_matched);
 
+    // ── 1.5단계: 클러스터 분열 감지 (1 트랙 → 2 클러스터) ───────────
+    DetectClusterSplit(clusters, cluster_to_track, track_matched);
+
     const double thresh_sq =
         params_.stationary_threshold_mm * params_.stationary_threshold_mm;
 
@@ -348,9 +459,35 @@ void ClusterTracker::Update(const std::vector<Cluster>& clusters,
         tr.prev_y_mm = tr.y_mm;
         tr.x_mm      = clusters[c].centroid_x_mm;
         tr.y_mm      = clusters[c].centroid_y_mm;
+
+        // 폭 변화 추적 (투기 보조 신호)
+        double old_width = tr.width_mm;
         tr.width_mm  = clusters[c].width_mm;
+
+        // 폭 급감 감지: 이동 중인 사람의 폭만 검사 (정지 중인 사람의 폭 변화는 무시)
+        if (!tr.is_dumped_item && !tr.is_dump_suspect &&
+            tr.was_moving && tr.age > 3 &&
+            old_width > 0.0 &&
+            (old_width - tr.width_mm) > params_.width_drop_threshold_mm)
+        {
+            tr.width_drop_detected = true;
+            tr.width_drop_x_mm     = tr.prev_x_mm;
+            tr.width_drop_y_mm     = tr.prev_y_mm;
+            std::printf("[INFO] 폭 감소 감지: ID %u, %.0fmm → %.0fmm "
+                        "(차이=%.0fmm, 위치=(%.0f,%.0f))\n",
+                        tr.id, old_width, tr.width_mm,
+                        old_width - tr.width_mm,
+                        tr.width_drop_x_mm, tr.width_drop_y_mm);
+        } else {
+            tr.prev_width_mm = tr.width_mm;
+        }
+
         tr.lost_count = 0;
         tr.age++;
+
+        // 속도 벡터 계산
+        tr.vx_mm = tr.x_mm - tr.prev_x_mm;
+        tr.vy_mm = tr.y_mm - tr.prev_y_mm;
 
         // 궤적 이력 기록 (투기 분리 감지에 사용)
         if (!tr.is_dumped_item && !tr.is_dump_suspect) {
@@ -457,9 +594,33 @@ void ClusterTracker::Update(const std::vector<Cluster>& clusters,
             if (tr.suspect_confirm_count >= params_.separation_confirm_frames) {
                 tr.is_dump_suspect = false;
                 tr.is_dumped_item  = true;
-                std::printf("[INFO] 투기 의심 확정 (ID: %u, 주체: %d). "
+
+                // 속도 벡터 분석: 분리 객체가 사람에게서 멀어지는 방향(receding)인지 확인
+                bool is_receding = false;
+                for (const auto& p : tracks_) {
+                    if (static_cast<int>(p.id) == tr.source_id) {
+                        // 사람→객체 방향 벡터
+                        double dx = tr.x_mm - p.x_mm;
+                        double dy = tr.y_mm - p.y_mm;
+                        double dist = std::sqrt(dx * dx + dy * dy);
+                        if (dist > 1.0) {
+                            // 정규화된 방향 벡터
+                            double nx = dx / dist;
+                            double ny = dy / dist;
+                            // 객체 속도의 이탈 성분 (dot product)
+                            double recede_speed = tr.vx_mm * nx + tr.vy_mm * ny;
+                            if (recede_speed > params_.receding_velocity_threshold) {
+                                is_receding = true;
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                std::printf("[INFO] 투기 의심 확정 (ID: %u, 주체: %d, 이탈운동: %s). "
                             "정지 상태 검증 시작...\n",
-                            tr.id, tr.source_id);
+                            tr.id, tr.source_id,
+                            is_receding ? "Yes" : "No");
             }
         }
     }
