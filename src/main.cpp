@@ -143,10 +143,10 @@ int main(int argc, char* argv[]) {
     fp.fov_max_deg          = 270.0f;
     fp.min_cluster_width_mm = 30.0;
     fp.max_cluster_width_mm = 800.0;
-    fp.merge_radius_mm      = 450.0;   // 300->450mm: 양 다리 및 떨어진 점구름 병합력 대폭 상향
+    fp.merge_radius_mm      = 250.0;   // 450->250mm: 과도한 병합 방지 (쓰레기가 사람으로 흡수되는 것 차단)
 
     ld19::DBSCANParams dp;
-    dp.epsilon_mm = 200.0;  // 150->200: 점구름 연결성 강화
+    dp.epsilon_mm = 150.0;  // 200->150: 점구름 연결 범위 정상화
     dp.min_points = 3;  // 5→3: 작은 물체(봉투 등) 감지율 향상
 
     ld19::ScanProcessor processor(fp, dp);
@@ -166,14 +166,14 @@ int main(int argc, char* argv[]) {
     tp.association_max_dist_mm     = 400.0;
     tp.lost_age_limit              = 10;
     tp.enable_dumping_detection    = true;
-    tp.min_walk_dist_mm            = 150.0; // 500->150: 짧은 거리 이동 후 투기도 허용
-    tp.min_age_for_dump            = 5;     // 10->5: 빠르게 지나가도 투기 인식
+    tp.min_walk_dist_mm            = 100.0; // 150->100: 더욱 짧은 이동도 허용
+    tp.min_age_for_dump            = 5;     
     tp.dump_stationary_frame_count = 30;
-    tp.separation_max_dist_mm      = 400.0;
-    tp.separation_min_dist_from_current_mm = 150.0;  // 200->150: 발 바로 밑(15cm)에 버려도 분리 인식
-    tp.min_dump_candidate_width_mm = 30.0;           // 50->30: 작은 쓰레기도 허용
-    tp.separation_confirm_frames   = 3;              // 5->3: 신속한 분리 확정 판별
-    tp.leg_proximity_radius_mm     = 250.0;          // 350->250: 다리 오인식 방지 반경 축소 (분리 용이성 확보)
+    tp.separation_max_dist_mm      = 600.0; // 400->600: 쓰레기 분리 시 과거 궤적 참조 범위를 대폭 확대 (가장 중요)
+    tp.separation_min_dist_from_current_mm = 150.0;  
+    tp.min_dump_candidate_width_mm = 30.0;           
+    tp.separation_confirm_frames   = 3;              
+    tp.leg_proximity_radius_mm     = 200.0;          // 250->200: 분리된 쓰레기가 다시 다리로 오인되는 상황 차단 추가 완화
     tp.position_history_size       = 30;             // 궤적 이력 보존 프레임 수
     tp.recovery_max_dist_mm        = 600.0;          // 잠시 lost된 트랙 복구 최대 거리
     tp.recovery_max_lost_frames    = 3;              // 복구 허용 최대 lost 프레임
@@ -330,16 +330,14 @@ int main(int argc, char* argv[]) {
         // 7) 클러스터 + 이벤트 → UDP JSON (Unity 메타데이터)
         json_sender.Send(clusters, tracker.GetTracks(), dep_events, frame_count);
 
-        // 8) 콘솔 출력
-        double freq_hz = 0.0;
-        lidar.GetScanFrequency(freq_hz);
-
-        std::printf("── Frame #%u  (raw=%zu, %.1f Hz) "
-                    "──────────────────────────────────\n",
-                    frame_count, frame.size(), freq_hz);
-
-        PrintClusterSummary(clusters, valid_count);
-        PrintTracks(tracker.GetTracks());
+        // 8) 콘솔 출력 (투기 확정 이벤트만 노출되도록 상시 로그 주석 처리)
+        // double freq_hz = 0.0;
+        // lidar.GetScanFrequency(freq_hz);
+        // std::printf("── Frame #%u  (raw=%zu, %.1f Hz) "
+        //             "──────────────────────────────────\n",
+        //             frame_count, frame.size(), freq_hz);
+        // PrintClusterSummary(clusters, valid_count);
+        // PrintTracks(tracker.GetTracks());
 
         if (!dep_events.empty()) {
             PrintDepartureEvents(dep_events);
@@ -348,12 +346,11 @@ int main(int argc, char* argv[]) {
             PrintDumpingEvents(dump_events);
         }
 
-        // 통계 (20 프레임마다)
+        // 통계 (20 프레임마다) 출력 주석 처리
+        /*
         if (frame_count % 20 == 0) {
             std::printf("  [BG]   objects=%zu\n", bg_filter.GetBackgroundCount());
-            std::printf("  [HTTP] sent=%zu fail=%zu queued=%zu\n",
-                        notifier.GetSentCount(), notifier.GetFailCount(),
-                        notifier.GetQueueSize());
+            // HTTP 전송 숨김
             std::printf("  [UDP]  pkts=%zu bytes=%zu errors=%zu\n",
                         udp.GetTotalPackets(), udp.GetTotalBytes(),
                         udp.GetSendErrors());
@@ -362,8 +359,8 @@ int main(int argc, char* argv[]) {
                         json_sender.GetDropCount(),
                         json_sender.GetTruncCount());
         }
-
         std::printf("\n");
+        */
         usleep(100000); // 100 ms (~10 Hz)
     }
 
