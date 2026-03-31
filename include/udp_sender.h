@@ -98,7 +98,7 @@ struct ClusterItem {
     float    velocity_x_mm;   // mm/frame
     float    velocity_y_mm;
 };
-static_assert(sizeof(ClusterItem) == 21, "ClusterItem must be 21 bytes");
+static_assert(sizeof(ClusterItem) == 25, "ClusterItem must be 25 bytes");
 
 #pragma pack(pop)
 

@@ -189,7 +189,8 @@ int main(int argc, char* argv[]) {
     nc.retry_interval_sec = 10;
 
     ld19::EventNotifier notifier(nc);
-    notifier.StartRetryThread();
+    // 재전송 백그라운드 스레드를 비활성화하여 큐에 쌓인 데이터의 404 에러 재시도 출력을 차단 (테스트용)
+    // notifier.StartRetryThread();
 
     // ── UDP 송신기 ───────────────────────────────────────────────────
     ld19::UdpSenderConfig uc;
