@@ -143,10 +143,10 @@ int main(int argc, char* argv[]) {
     fp.fov_max_deg          = 270.0f;
     fp.min_cluster_width_mm = 30.0;
     fp.max_cluster_width_mm = 800.0;
-    fp.merge_radius_mm      = 300.0;   // 300mm 이내 클러스터 병합 (보행자 다리 합치기)
+    fp.merge_radius_mm      = 450.0;   // 300->450mm: 양 다리 및 떨어진 점구름 병합력 대폭 상향
 
     ld19::DBSCANParams dp;
-    dp.epsilon_mm = 150.0;
+    dp.epsilon_mm = 200.0;  // 150->200: 점구름 연결성 강화
     dp.min_points = 3;  // 5→3: 작은 물체(봉투 등) 감지율 향상
 
     ld19::ScanProcessor processor(fp, dp);
@@ -155,6 +155,7 @@ int main(int argc, char* argv[]) {
     ld19::BackgroundFilterParams bgp;
     bgp.learning_frames = 50;
     bgp.match_radius_mm = 150.0;
+    bgp.add_after_frames = 600; // 100->600: 정지 물체가 배경으로 흡수되는 시간 지연 (약 60초)
 
     ld19::BackgroundFilter bg_filter(bgp);
 
@@ -165,14 +166,14 @@ int main(int argc, char* argv[]) {
     tp.association_max_dist_mm     = 400.0;
     tp.lost_age_limit              = 10;
     tp.enable_dumping_detection    = true;
-    tp.min_walk_dist_mm            = 500.0;
-    tp.min_age_for_dump            = 10;  // 20→10: 빠른 이동자(2m/s)도 FOV 내에서 자격 획득
+    tp.min_walk_dist_mm            = 150.0; // 500->150: 짧은 거리 이동 후 투기도 허용
+    tp.min_age_for_dump            = 5;     // 10->5: 빠르게 지나가도 투기 인식
     tp.dump_stationary_frame_count = 30;
     tp.separation_max_dist_mm      = 400.0;
-    tp.separation_min_dist_from_current_mm = 200.0;  // 현재 위치에서 200mm 이상 떨어져야 투기물
-    tp.min_dump_candidate_width_mm = 50.0;           // 폭 50mm 미만 → 다리로 간주
-    tp.separation_confirm_frames   = 5;              // 5프레임 독립 존재해야 투기 의심 확정
-    tp.leg_proximity_radius_mm     = 350.0;          // 확정 단계에서 350mm 이내 사람 트랙 있으면 다리
+    tp.separation_min_dist_from_current_mm = 150.0;  // 200->150: 발 바로 밑(15cm)에 버려도 분리 인식
+    tp.min_dump_candidate_width_mm = 30.0;           // 50->30: 작은 쓰레기도 허용
+    tp.separation_confirm_frames   = 3;              // 5->3: 신속한 분리 확정 판별
+    tp.leg_proximity_radius_mm     = 250.0;          // 350->250: 다리 오인식 방지 반경 축소 (분리 용이성 확보)
     tp.position_history_size       = 30;             // 궤적 이력 보존 프레임 수
     tp.recovery_max_dist_mm        = 600.0;          // 잠시 lost된 트랙 복구 최대 거리
     tp.recovery_max_lost_frames    = 3;              // 복구 허용 최대 lost 프레임
@@ -312,14 +313,14 @@ int main(int argc, char* argv[]) {
         std::vector<ld19::DumpingEvent>   dump_events;
         tracker.Update(clusters, dep_events, dump_events);
 
-        // 4) 이탈 이벤트 → HTTP POST
+        // 4) 이탈 이벤트 → HTTP POST (테스트를 위해 비활성화)
         for (const auto& evt : dep_events) {
-            notifier.Send(evt);
+            // notifier.Send(evt);
         }
 
-        // 5) 투기 이벤트 → HTTP POST
+        // 5) 투기 이벤트 → HTTP POST (테스트를 위해 비활성화)
         for (const auto& evt : dump_events) {
-            notifier.SendDumping(evt);
+            // notifier.SendDumping(evt);
         }
 
         // 6) 점구름 + 클러스터 → UDP 바이너리 (Unity 점구름 렌더링)
