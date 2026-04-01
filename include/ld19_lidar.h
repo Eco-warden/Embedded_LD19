@@ -25,7 +25,7 @@
 #include <functional>
 #include <atomic>
 
-#include "ldlidar_driver.h"
+#include "core/ldlidar_driver.h"
 
 namespace ld19 {
 

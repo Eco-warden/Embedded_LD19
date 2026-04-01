@@ -29,6 +29,7 @@ file(GLOB_RECURSE LDLIDAR_SDK_SOURCES
 
 # SDK 헤더 디렉토리
 set(LDLIDAR_SDK_INCLUDE_DIRS
+  ${LDLIDAR_SDK_DIR}/ldlidar_driver/include
   ${LDLIDAR_SDK_DIR}/ldlidar_driver/include/core
   ${LDLIDAR_SDK_DIR}/ldlidar_driver/include/dataprocess
   ${LDLIDAR_SDK_DIR}/ldlidar_driver/include/filter
