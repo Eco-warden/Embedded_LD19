@@ -30,6 +30,7 @@
 #pragma once
 
 #include "scan_processor.h"
+#include "kalman_filter.h"
 
 #include <cstdint>
 #include <vector>
@@ -113,6 +114,9 @@ struct Track {
     bool       split_detected       = false; // 이 트랙에서 클러스터 분열이 발생했는지
     double     split_x_mm           = 0.0;   // 분열 위치 X
     double     split_y_mm           = 0.0;   // 분열 위치 Y
+
+    // -- 칼만 필터 (궤적 예측) --
+    KalmanFilter2D kf;
 };
 
 // ── 추적기 파라미터 ──────────────────────────────────────────────────
@@ -151,6 +155,16 @@ struct TrackerParams {
 
     // -- 속도 벡터 분석 (투사 궤적) --
     double   receding_velocity_threshold   = 20.0;   // 분리 객체가 사람에게서 멀어지는 최소 속도 (mm/frame)
+
+    // -- 칼만 필터 노이즈 파라미터 --
+    double   kf_process_noise              = 50.0;   // 프로세스 노이즈 (모델 불확실성)
+    double   kf_measure_noise              = 100.0;  // 관측 노이즈 (센서 불확실성)
+    double   kf_fallback_dist_mm           = 300.0;  // 칼만 예측 기반 2차 매칭 최대 거리
+
+    // -- Hotspot(투기 지역 우선 감지) --
+    double   hotspot_radius_mm             = 1000.0; // 과거 투기 위치 반경 (mm)
+    uint32_t hotspot_boost_frames          = 5;      // hotspot 내 의심 객체 확인 프레임 감소량
+    size_t   max_hotspots                  = 20;     // 최대 보존 hotspot 수
 };
 
 // ── 이탈 이벤트 콜백 타입 ────────────────────────────────────────────
@@ -187,6 +201,11 @@ private:
     uint32_t           frame_count_ = 0;
     DepartureCallback  dep_callback_;
     DumpingCallback    dump_callback_;
+
+    // -- Hotspot (과거 투기 위치) --
+    std::vector<std::pair<double,double>> hotspot_positions_;
+
+    bool IsInHotspot(double x, double y) const;
 
     // 삭제된 일반 트랙의 최근 위치 버퍼 (오인식 방지용)
     // 트랙 삭제 후에도 해당 위치를 일정 기간 기억하여

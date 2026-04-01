@@ -37,6 +37,8 @@ bool BackgroundFilter::Apply(std::vector<Cluster>& clusters) {
             for (auto& bg : background_map_) {
                 bg.confirmed = true;
             }
+            // 장기 배경에도 동일하게 초기화
+            long_term_map_ = background_map_;
             std::printf("[INFO] 배경 학습 완료. 등록된 고정 물체 수: %zu\n",
                         background_map_.size());
         }
@@ -88,26 +90,53 @@ void BackgroundFilter::LearnFrame(const std::vector<Cluster>& clusters) {
 }
 
 // ── 운용: 배경 맵에 매칭되는 클러스터 제거 ──────────────────────────
-//   매칭된 배경 엔트리의 absent_count를 리셋한다 (적응형 갱신 연동)
+//   이중 배경 모델: 단기 배경에 매칭되더라도, 장기 배경에 미매칭이면
+//   "신규 정지 객체"로 판단하여 유지 (쓰레기가 배경에 빨리 흡수되는 것 방지)
 void BackgroundFilter::FilterBackground(std::vector<Cluster>& clusters) {
     const double radius_sq = params_.match_radius_mm * params_.match_radius_mm;
 
     clusters.erase(
         std::remove_if(clusters.begin(), clusters.end(),
             [&](const Cluster& cl) {
+                bool in_short_term = false;
                 for (auto& bg : background_map_) {
-                    if (!bg.confirmed) continue;  // 미확정 후보는 필터링에 사용하지 않음
+                    if (!bg.confirmed) continue;
                     double dx = cl.centroid_x_mm - bg.x_mm;
                     double dy = cl.centroid_y_mm - bg.y_mm;
                     if (dx * dx + dy * dy <= radius_sq) {
-                        bg.absent_count = 0;  // 관측됨 → absent 리셋
-                        return true;
+                        bg.absent_count = 0;
+                        in_short_term = true;
+                        break;
                     }
                 }
-                return false;
+
+                if (!in_short_term) return false;  // 단기 배경에도 없으면 전경
+
+                // 이중 배경: 장기 배경에도 있으면 확실한 배경이므로 제거
+                if (params_.enable_dual_background) {
+                    bool in_long_term = IsInLongTermBg(cl.centroid_x_mm,
+                                                       cl.centroid_y_mm);
+                    if (!in_long_term) {
+                        // 단기에는 있지만 장기에 없음 → 신규 정지 객체 → 유지
+                        return false;
+                    }
+                }
+                return true;  // 양쪽 모두 배경으로 판정 → 제거
             }),
         clusters.end()
     );
+}
+
+// -- 장기 배경 매칭 검사 --
+bool BackgroundFilter::IsInLongTermBg(double x, double y) const {
+    const double radius_sq = params_.match_radius_mm * params_.match_radius_mm;
+    for (const auto& bg : long_term_map_) {
+        if (!bg.confirmed) continue;
+        double dx = x - bg.x_mm;
+        double dy = y - bg.y_mm;
+        if (dx * dx + dy * dy <= radius_sq) return true;
+    }
+    return false;
 }
 
 // ── 적응형 배경 갱신 ────────────────────────────────────────────────
@@ -192,6 +221,52 @@ void BackgroundFilter::AdaptiveUpdate(const std::vector<Cluster>& foreground_clu
             entry.absent_count = 0;
             entry.confirmed   = false;
             background_map_.push_back(entry);
+        }
+    }
+
+    // ── 장기 배경 모델 독립 갱신 ─────────────────────────────────────
+    if (params_.enable_dual_background) {
+        // absent_count 증가
+        for (auto& bg : long_term_map_) { bg.absent_count++; }
+
+        // 오래 안 보이면 제거
+        long_term_map_.erase(
+            std::remove_if(long_term_map_.begin(), long_term_map_.end(),
+                [this](const BackgroundEntry& bg) {
+                    return bg.absent_count > params_.long_term_remove_after;
+                }),
+            long_term_map_.end()
+        );
+
+        // 전경 클러스터를 장기 모델에도 등록 시도
+        for (const auto& cl : foreground_clusters) {
+            bool matched_lt = false;
+            for (auto& bg : long_term_map_) {
+                double dx = cl.centroid_x_mm - bg.x_mm;
+                double dy = cl.centroid_y_mm - bg.y_mm;
+                if (dx * dx + dy * dy <= radius_sq) {
+                    bg.seen_count++;
+                    bg.absent_count = 0;
+                    if (!bg.confirmed &&
+                        bg.seen_count >= params_.long_term_add_frames) {
+                        bg.confirmed = true;
+                        std::printf("[INFO] 장기 배경 등록: (%.0f, %.0f) mm\n",
+                                    bg.x_mm, bg.y_mm);
+                    }
+                    matched_lt = true;
+                    break;
+                }
+            }
+            if (!matched_lt) {
+                BackgroundEntry entry;
+                entry.x_mm        = cl.centroid_x_mm;
+                entry.y_mm        = cl.centroid_y_mm;
+                entry.width_mm    = cl.width_mm;
+                entry.seen_count   = 1;
+                entry.absent_count = 0;
+                entry.confirmed   = false;
+                long_term_map_.push_back(entry);
+            }
         }
     }
 }

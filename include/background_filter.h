@@ -39,6 +39,11 @@ struct BackgroundFilterParams {
     bool     enable_adaptive  = true;   // 운용 중 배경 자동 갱신 활성화
     uint32_t add_after_frames = 100;    // 이 프레임 동안 같은 위치에 있으면 배경 등록
     uint32_t remove_after_absent = 200; // 이 프레임 동안 안 보이면 배경에서 제거
+
+    // ── 이중 배경 모델 (장기) ────────────────────────────────────────
+    bool     enable_dual_background     = true;    // 이중 배경 모델 활성화
+    uint32_t long_term_add_frames       = 500;     // 장기 배경 등록 프레임 수
+    uint32_t long_term_remove_after     = 1000;    // 장기 배경 제거 absent 프레임
 };
 
 // ── 배경 맵 엔트리 ──────────────────────────────────────────────────
@@ -78,13 +83,16 @@ public:
 
 private:
     BackgroundFilterParams        params_;
-    std::vector<BackgroundEntry>  background_map_;
+    std::vector<BackgroundEntry>  background_map_;       // 단기 배경
+    std::vector<BackgroundEntry>  long_term_map_;        // 장기 배경
     uint32_t                      frame_count_ = 0;
     std::vector<std::pair<double,double>> dumped_positions_;
 
     void LearnFrame(const std::vector<Cluster>& clusters);
     void FilterBackground(std::vector<Cluster>& clusters);
     void AdaptiveUpdate(const std::vector<Cluster>& foreground_clusters);
+
+    bool IsInLongTermBg(double x, double y) const;
 };
 
 } // namespace ld19

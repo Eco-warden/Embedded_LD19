@@ -64,6 +64,7 @@ std::string JsonPacketSender::ResolveType(const Cluster& cluster,
 
     double best_sq = 1e18;
     TrackState best_state = TrackState::Moving;
+    bool is_dumped = false;
 
     for (const auto& tr : tracks) {
         double dx = cluster.centroid_x_mm - tr.x_mm;
@@ -72,9 +73,11 @@ std::string JsonPacketSender::ResolveType(const Cluster& cluster,
         if (d2 < best_sq) {
             best_sq    = d2;
             best_state = tr.state;
+            is_dumped  = tr.is_dumped_item;
         }
     }
 
+    if (is_dumped) return "dumped";
     return (best_state == TrackState::Departed) ? "abandoned" : "normal";
 }
 
@@ -100,47 +103,86 @@ std::string JsonPacketSender::ResolveType(const Cluster& cluster,
 std::string JsonPacketSender::Serialize(
     const std::vector<Cluster>& clusters,
     const std::vector<Track>& tracks,
-    const std::vector<DepartureEvent>& events,
+    const std::vector<DepartureEvent>& dep_events,
+    const std::vector<DumpingEvent>& dump_events,
     uint32_t frame_id)
 {
     uint64_t now = NowMs();
 
-    // ── clusters 배열 빌드 ──────────────────────────────────────────
+    // -- clusters 배열 --
     json j_clusters = json::array();
-
     for (size_t i = 0; i < clusters.size(); ++i) {
         const auto& cl = clusters[i];
-
         json j_cl;
         j_cl["id"]    = static_cast<int>(i);
-        j_cl["x"]     = std::round(cl.centroid_x_mm * 10.0) / 10.0;  // 소수점 1자리
+        j_cl["x"]     = std::round(cl.centroid_x_mm * 10.0) / 10.0;
         j_cl["y"]     = std::round(cl.centroid_y_mm * 10.0) / 10.0;
         j_cl["count"] = static_cast<int>(cl.points.size());
         j_cl["type"]  = ResolveType(cl, tracks);
-
         j_clusters.push_back(std::move(j_cl));
     }
 
-    // ── event 객체 빌드 (최신 이벤트 1개, 없으면 null) ──────────────
-    json j_event = nullptr;
+    // -- tracks 배열 (사람 이동 데이터) --
+    json j_tracks = json::array();
+    for (const auto& tr : tracks) {
+        json j_tr;
+        j_tr["id"]    = tr.id;
+        j_tr["x"]     = std::round(tr.x_mm * 10.0) / 10.0;
+        j_tr["y"]     = std::round(tr.y_mm * 10.0) / 10.0;
 
-    if (!events.empty()) {
-        const auto& evt = events.back();  // 가장 최근 이벤트
-        j_event = {
-            {"type",       "abandoned"},
-            {"x",          std::round(evt.x_mm * 10.0) / 10.0},
-            {"y",          std::round(evt.y_mm * 10.0) / 10.0},
-            {"cluster_id", static_cast<int>(evt.track_id)},
-            {"timestamp",  MsToIso8601(evt.timestamp_ms)}
+        const char* state_str = "unknown";
+        switch (tr.state) {
+            case TrackState::Moving:     state_str = "moving"; break;
+            case TrackState::Stationary: state_str = "stationary"; break;
+            case TrackState::Departed:   state_str = "departed"; break;
+            case TrackState::Lost:       state_str = "lost"; break;
+        }
+        j_tr["state"]          = state_str;
+        j_tr["vx"]             = std::round(tr.vx_mm * 10.0) / 10.0;
+        j_tr["vy"]             = std::round(tr.vy_mm * 10.0) / 10.0;
+        j_tr["is_dumped_item"] = tr.is_dumped_item;
+        j_tr["is_dump_suspect"]= tr.is_dump_suspect;
+
+        j_tracks.push_back(std::move(j_tr));
+    }
+
+    // -- departure_event (이탈 이벤트) --
+    json j_dep_event = nullptr;
+    if (!dep_events.empty()) {
+        const auto& evt = dep_events.back();
+        j_dep_event = {
+            {"type",      "departed"},
+            {"track_id",  static_cast<int>(evt.track_id)},
+            {"x",         std::round(evt.x_mm * 10.0) / 10.0},
+            {"y",         std::round(evt.y_mm * 10.0) / 10.0},
+            {"timestamp", MsToIso8601(evt.timestamp_ms)}
         };
     }
 
-    // ── 최종 패킷 조립 ─────────────────────────────────────────────
+    // -- dumping_event (투기 확정 이벤트) --
+    json j_dump_event = nullptr;
+    if (!dump_events.empty()) {
+        const auto& evt = dump_events.back();
+        j_dump_event = {
+            {"type",      "dumping_confirmed"},
+            {"person_id", static_cast<int>(evt.person_track_id)},
+            {"person_x",  std::round(evt.person_x_mm * 10.0) / 10.0},
+            {"person_y",  std::round(evt.person_y_mm * 10.0) / 10.0},
+            {"object_id", static_cast<int>(evt.object_track_id)},
+            {"object_x",  std::round(evt.object_x_mm * 10.0) / 10.0},
+            {"object_y",  std::round(evt.object_y_mm * 10.0) / 10.0},
+            {"timestamp", MsToIso8601(evt.timestamp_ms)}
+        };
+    }
+
+    // -- 최종 패킷 조립 --
     json packet;
-    packet["frame_id"]  = frame_id;
-    packet["timestamp"] = MsToIso8601(now);
-    packet["clusters"]  = std::move(j_clusters);
-    packet["event"]     = std::move(j_event);
+    packet["frame_id"]        = frame_id;
+    packet["timestamp"]       = MsToIso8601(now);
+    packet["clusters"]        = std::move(j_clusters);
+    packet["tracks"]          = std::move(j_tracks);
+    packet["departure_event"] = std::move(j_dep_event);
+    packet["dumping_event"]   = std::move(j_dump_event);
 
     return packet.dump();
 }
@@ -154,11 +196,12 @@ std::string JsonPacketSender::Serialize(
 //
 bool JsonPacketSender::Send(const std::vector<Cluster>& clusters,
                             const std::vector<Track>& tracks,
-                            const std::vector<DepartureEvent>& events,
+                            const std::vector<DepartureEvent>& dep_events,
+                            const std::vector<DumpingEvent>& dump_events,
                             uint32_t frame_id)
 {
     // 1) 전체 직렬화 시도
-    std::string payload = Serialize(clusters, tracks, events, frame_id);
+    std::string payload = Serialize(clusters, tracks, dep_events, dump_events, frame_id);
 
     // 2) 크기 제한 체크
     if (payload.size() <= UDP_MAX_DGRAM) {
@@ -170,8 +213,7 @@ bool JsonPacketSender::Send(const std::vector<Cluster>& clusters,
         return false;
     }
 
-    // 3) 초과 → 클러스터 수를 줄여서 재직렬화
-    //    포인트 수 내림차순 정렬 후, 중요한 (큰) 클러스터만 유지
+    // 3) 초과 -> 클러스터 수를 줄여서 재직렬화
     std::vector<Cluster> trimmed = clusters;
     std::sort(trimmed.begin(), trimmed.end(),
               [](const Cluster& a, const Cluster& b) {
@@ -182,7 +224,7 @@ bool JsonPacketSender::Send(const std::vector<Cluster>& clusters,
         trimmed.pop_back();
         trunc_count_++;
 
-        payload = Serialize(trimmed, tracks, events, frame_id);
+        payload = Serialize(trimmed, tracks, dep_events, dump_events, frame_id);
 
         if (payload.size() <= UDP_MAX_DGRAM) {
             std::fprintf(stderr,
@@ -198,7 +240,6 @@ bool JsonPacketSender::Send(const std::vector<Cluster>& clusters,
         }
     }
 
-    // 클러스터 0개로도 초과하는 경우는 사실상 불가
     std::fprintf(stderr, "[JSON] Cannot fit packet under 65507 bytes\n");
     drop_count_++;
     return false;

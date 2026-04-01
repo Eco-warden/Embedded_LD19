@@ -124,7 +124,7 @@ int main(int argc, char* argv[]) {
     // argv[3]: Unity IP:PORT     (기본 127.0.0.1:9090)
     const char* serial_port = (argc > 1) ? argv[1] : "/dev/ttyAMA0";
     const char* api_url     = (argc > 2) ? argv[2]
-                              : "https://lorinda-nonexponible-zita.ngrok-free.dev/api/dumping-event";
+                              : "https://api.ecowarden.systems/api/dumping-event";
     const char* unity_addr  = (argc > 3) ? argv[3] : "127.0.0.1:9090";
 
     // ── LiDAR ────────────────────────────────────────────────────────
@@ -357,7 +357,7 @@ int main(int argc, char* argv[]) {
         udp.SendClusters(clusters, tracker.GetTracks(), frame_count);
 
         // 7) 클러스터 + 이벤트 → UDP JSON (Unity 메타데이터)
-        json_sender.Send(clusters, tracker.GetTracks(), dep_events, frame_count);
+        json_sender.Send(clusters, tracker.GetTracks(), dep_events, dump_events, frame_count);
 
         // 8) 콘솔 출력 (투기 확정 이벤트만 노출되도록 상시 로그 주석 처리)
         // double freq_hz = 0.0;

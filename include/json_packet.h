@@ -67,15 +67,17 @@ public:
     /**
      * @brief 클러스터 + (옵션) 이탈 이벤트를 JSON 직렬화 후 UDP 전송
      *
-     * @param clusters   현재 프레임 클러스터 목록
-     * @param tracks     현재 트랙 목록 (DEPARTED 상태 판별용)
-     * @param events     이번 프레임의 이탈 이벤트 (비어있으면 event=null)
-     * @param frame_id   프레임 번호
+     * @param clusters    현재 프레임 클러스터 목록
+     * @param tracks      현재 트랙 목록
+     * @param dep_events  이번 프레임의 이탈 이벤트
+     * @param dump_events 이번 프레임의 투기 확정 이벤트
+     * @param frame_id    프레임 번호
      * @return true: 전송 성공
      */
     bool Send(const std::vector<Cluster>& clusters,
               const std::vector<Track>& tracks,
-              const std::vector<DepartureEvent>& events,
+              const std::vector<DepartureEvent>& dep_events,
+              const std::vector<DumpingEvent>& dump_events,
               uint32_t frame_id);
 
     /**
@@ -85,7 +87,8 @@ public:
     static std::string Serialize(
         const std::vector<Cluster>& clusters,
         const std::vector<Track>& tracks,
-        const std::vector<DepartureEvent>& events,
+        const std::vector<DepartureEvent>& dep_events,
+        const std::vector<DumpingEvent>& dump_events,
         uint32_t frame_id
     );
 

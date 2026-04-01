@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGTERM, SignalHandler);
 
     const char* api_url = (argc > 1) ? argv[1]
-        : "https://lorinda-nonexponible-zita.ngrok-free.dev/api/dumping-event";
+        : "https://api.ecowarden.systems/api/dumping-event";
 
     // ── 파이프라인 파라미터 (main.cpp와 동일) ────────────────────────
     ld19::FilterParams fp;

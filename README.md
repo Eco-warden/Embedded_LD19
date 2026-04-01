@@ -50,8 +50,12 @@
 
 | 기능 | 설명 |
 |------|------|
-| **실시간 점구름 수집** | LD19 LiDAR로 360° 2D 점구름을 10Hz로 수집, 직교좌표 변환 |
-| **투기 자동 탐지** | DBSCAN 클러스터링 + 궤적 기반 분리 감지로 사람이 물건을 놓고 떠나는 행위 탐지 |
+| **실시간 점구름 수집** | LD19 LiDAR로 360도 2D 점구름을 10Hz로 수집, 직교좌표 변환 |
+| **투기 자동 탐지** | DBSCAN 클러스터링 + 궤적 기반 분리 감지 + 클러스터 분열 + 폭 감소 감지 |
+| **칼만 필터 추적** | 2D 등속 칼만 필터로 매칭 실패 시 예측 위치 기반 fallback 재매칭 |
+| **이중 배경 모델** | 단기(100프레임) + 장기(500프레임) 이중 배경으로 투기물 배경 흡수 방지 |
+| **Hotspot 가중치** | 과거 투기 확정 위치 반경 1m 내 신규 의심 객체의 확인 시간 단축 |
+| **PIR 센서 연동** | PIR 인체 감지 센서로 사람 존재 시에만 투기 탐지 활성화 (오탐 방지) |
 | **증거 무결성 보장** | PostgreSQL Append-Only + 트리거 기반 WORM 구조로 로그 위변조 원천 차단 |
 | **실시간 경보** | WebSocket 기반 0.1초 미만 이벤트 푸시, 관제 대시보드 즉시 알림 |
 | **3D 디지털 트윈** | Unity VFX Graph로 LiDAR 점구름 + 추적 객체를 실시간 3D 시각화 |
@@ -71,8 +75,8 @@ graph TB
     subgraph EMB["임베디드 계층 (C++17)"]
         SCAN["ld19_lidar<br/>점구름 수집"]
         PROC["scan_processor<br/>필터 + DBSCAN<br/>+ 다리 병합"]
-        BG["background_filter<br/>배경 학습/제거"]
-        TRACK["cluster_tracker<br/>객체 추적<br/>+ 투기 탐지"]
+        BG["background_filter<br/>이중 배경 학습/제거<br/>단기+장기 모델"]
+        TRACK["cluster_tracker<br/>객체 추적 + 칼만 필터<br/>+ 투기 탐지 + Hotspot"]
         NOTIF["event_notifier<br/>비동기 HTTP POST<br/>+ 큐 영속"]
         UDP["udp_sender<br/>+ json_packet"]
     end
@@ -110,16 +114,18 @@ graph TB
 ### 데이터 흐름
 
 ```
-LD19 LiDAR (GPIO UART, 230400 baud, 10Hz)
+LD19 LiDAR (GPIO UART, 230400 baud, 10Hz) + PIR Sensor (BCM17)
     │
     ▼
 scan_processor ── 필터(200~5000mm) → 직교좌표 → DBSCAN(ε=150mm) → 다리 병합
     │
     ▼
-background_filter ── 50프레임 학습 → 배경 제거 → 적응형 업데이트
+background_filter ── 50프레임 학습 → 이중 배경 제거(단기+장기) → 적응형 업데이트
     │
     ▼
-cluster_tracker ── 객체 추적 → 궤적 분석 → 투기 탐지(suspect → confirm)
+cluster_tracker ── AssociateGreedy(+칼만필터 fallback) → 궤적 분석
+    │                  → DetectClusterSplit → DetectSeparation
+    │                  → Hotspot 가중치 → 투기 탐지(suspect → confirm)
     │                                          │
     ├── HTTP POST ──→ FastAPI ──→ PostgreSQL    │
     │                    └──→ WebSocket → 대시보드
@@ -134,7 +140,7 @@ cluster_tracker ── 객체 추적 → 궤적 분석 → 투기 탐지(suspect
 | 계층 | 기술 | 비고 |
 |------|------|------|
 | **하드웨어** | LD19 LiDAR (LDROBOT), PIR 센서 | GPIO UART 230400 baud |
-| **임베디드** | C++17, ldlidar_stl_sdk, POSIX socket | Grid-DBSCAN, 궤적 기반 투기 탐지 |
+| **임베디드** | C++17, ldlidar_stl_sdk, POSIX socket | Grid-DBSCAN, 칼만 필터, 이중 배경 모델, Hotspot |
 | **백엔드** | Python 3.11, FastAPI, WebSocket | 0.1초 미만 이벤트 푸시 |
 | **데이터베이스** | PostgreSQL 15 + PostGIS 3.3 | WORM/Append-Only, 트리거 기반 위변조 차단 |
 | **시각화** | Unity 2022.3 LTS, VFX Graph | UDP 실시간 수신, 3D 디지털 트윈 |
@@ -157,17 +163,20 @@ Embedded_LD19/
 │   ├── sim_main.cpp              # 시뮬레이션 진입점 (센서 불필요)
 │   ├── ld19_lidar.cpp            # LD19 시리얼 연결 및 스캔
 │   ├── scan_processor.cpp        # 필터링 + DBSCAN + 클러스터 병합
-│   ├── background_filter.cpp     # 배경 학습 및 적응형 필터
-│   ├── cluster_tracker.cpp       # 다중 객체 추적 + 투기 탐지
+│   ├── background_filter.cpp     # 이중 배경(단기+장기) 학습 및 적응형 필터
+│   ├── cluster_tracker.cpp       # 다중 객체 추적 + 칼만 필터 + 투기 탐지 + Hotspot
+│   ├── pir_sensor.cpp            # PIR 인체 감지 센서 드라이버
 │   ├── event_notifier.cpp        # 비동기 HTTP POST + 큐 영속
-│   ├── json_packet.cpp           # JSON 패킷 직렬화
+│   ├── json_packet.cpp           # JSON 패킷 직렬화 (tracks + dumping_event)
 │   └── udp_sender.cpp            # UDP 전송 (바이너리/JSON)
 │
 ├── include/                      # C++ 헤더
 │   ├── ld19_lidar.h
 │   ├── scan_processor.h
-│   ├── background_filter.h
-│   ├── cluster_tracker.h
+│   ├── background_filter.h       # 이중 배경 모델 (BackgroundFilterParams)
+│   ├── cluster_tracker.h         # TrackerParams, Track (KalmanFilter2D 포함)
+│   ├── kalman_filter.h           # 2D 등속 칼만 필터 (header-only, 외부 의존 없음)
+│   ├── pir_sensor.h              # PIR 센서 인터페이스
 │   ├── event_notifier.h
 │   ├── json_packet.h
 │   └── udp_sender.h
@@ -275,13 +284,13 @@ sudo ./build/ld19_lidar_app
 | 인자 | 기본값 | 설명 |
 |------|--------|------|
 | argv[1] | `/dev/ttyAMA0` | LD19 GPIO UART 포트 |
-| argv[2] | `https://lorinda-nonexponible-zita.ngrok-free.dev/api/dumping-event` | 이벤트 수신 API URL |
+| argv[2] | `https://api.ecowarden.systems/api/dumping-event` | 이벤트 수신 API URL |
 | argv[3] | `127.0.0.1:9090` | Unity UDP 수신 주소 |
 
 커스텀 인자 예시:
 
 ```bash
-sudo ./build/ld19_lidar_app /dev/ttyAMA0 https://lorinda-nonexponible-zita.ngrok-free.dev/api/dumping-event 192.168.1.20:9090
+sudo ./build/ld19_lidar_app /dev/ttyAMA0 https://api.ecowarden.systems/api/dumping-event 192.168.1.20:9090
 ```
 
 #### Step 6. 정상 동작 확인
@@ -337,7 +346,7 @@ Ctrl+C
 ./build/ld19_sim
 
 # API 주소 직접 지정
-./build/ld19_sim https://lorinda-nonexponible-zita.ngrok-free.dev/api/dumping-event
+./build/ld19_sim https://api.ecowarden.systems/api/dumping-event
 ```
 
 시뮬레이션 시나리오:
@@ -374,9 +383,10 @@ Ctrl+C
 | 스캔 주기 | ~100ms (10Hz) | LD19 회전 주기 |
 | 최소 거리 | 200mm | 신뢰 가능 최소 측정 거리 |
 | 최대 거리 | 5,000mm | 운용 최대 범위 |
-| FOV | 90° ~ 270° | 전방 180° 감시 |
-| DBSCAN ε | 150mm | 이웃 탐색 반경 |
+| FOV | 90 ~ 270도 | 전방 180도 감시 |
+| DBSCAN epsilon | 150mm | 이웃 탐색 반경 |
 | DBSCAN minPts | 3 | 코어 포인트 최소 이웃 수 |
+| PIR 센서 핀 | BCM 17 | 인체 감지 보조 센서 |
 
 ### 투기 탐지
 
@@ -387,14 +397,41 @@ Ctrl+C
 | 최소 이동 거리 | 500mm | 투기 주체 최소 누적 이동 거리 |
 | 분리 탐지 거리 | 400mm | 궤적 이력에서 물체까지 최대 거리 |
 | suspect 확인 | 5프레임 | 독립 존재 확인 프레임 |
-| 정지 확인 | 30프레임 | 정지 유지 → DUMPING CONFIRMED |
-| 배경 학습 | 50프레임 | 시작 시 배경 학습 |
+| 정지 확인 | 30프레임 | 정지 유지 시 DUMPING CONFIRMED |
+| 폭 감소 임계값 | 40mm | 1프레임 폭 급감 감지 |
+| 이탈 속도 임계값 | 20mm/frame | 분리 객체 이탈 운동 최소 속도 |
+
+### 칼만 필터
+
+| 파라미터 | 값 | 설명 |
+|---------|-----|------|
+| 프로세스 노이즈 | 50.0 | 모션 모델 불확실성 (클수록 예측 불신) |
+| 관측 노이즈 | 100.0 | 센서 측정 불확실성 (클수록 측정 불신) |
+| Fallback 거리 | 300mm | KF 예측 기반 2차 매칭 최대 거리 |
+
+### 이중 배경 모델
+
+| 파라미터 | 값 | 설명 |
+|---------|-----|------|
+| 배경 학습 (단기) | 50프레임 | 시작 시 배경 학습 |
+| 단기 등록 | 100프레임 | 연속 관측 시 단기 배경 승격 |
+| 단기 제거 | 200프레임 | 미관측 시 단기 배경 해제 |
+| 장기 등록 | 500프레임 | 연속 관측 시 장기 배경 승격 |
+| 장기 제거 | 1000프레임 | 미관측 시 장기 배경 해제 |
+
+### Hotspot 가중치
+
+| 파라미터 | 값 | 설명 |
+|---------|-----|------|
+| Hotspot 반경 | 1000mm | 과거 투기 위치 기준 반경 |
+| Boost 프레임 | 5프레임 | Hotspot 내 의심 객체 확인 프레임 감소량 |
+| 최대 Hotspot 수 | 20개 | 보존할 최대 투기 위치 수 |
 
 ### 출력
 
 | 파라미터 | 값 | 설명 |
 |---------|-----|------|
-| HTTP 엔드포인트 | `https://lorinda-nonexponible-zita.ngrok-free.dev/api/dumping-event` | 이벤트 수신 API |
+| HTTP 엔드포인트 | `https://api.ecowarden.systems/api/dumping-event` | 이벤트 수신 API |
 | HTTP 타임아웃 | 3,000ms | 요청당 최대 대기 시간 |
 | 재시도 간격 | 10초 | 실패 이벤트 자동 재전송 |
 | UDP 목적지 | `127.0.0.1:9090` | Unity 수신 주소 |

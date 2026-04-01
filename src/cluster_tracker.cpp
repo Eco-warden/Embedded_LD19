@@ -57,6 +57,17 @@ uint64_t ClusterTracker::NowMs() {
 ClusterTracker::ClusterTracker(const TrackerParams& params)
     : params_(params) {}
 
+// -- Hotspot 반경 내 여부 검사 --
+bool ClusterTracker::IsInHotspot(double x, double y) const {
+    const double r_sq = params_.hotspot_radius_mm * params_.hotspot_radius_mm;
+    for (const auto& hp : hotspot_positions_) {
+        double dx = x - hp.first;
+        double dy = y - hp.second;
+        if (dx * dx + dy * dy < r_sq) return true;
+    }
+    return false;
+}
+
 // ── 콜백 등록 ───────────────────────────────────────────────────────
 void ClusterTracker::SetDepartureCallback(DepartureCallback cb) {
     dep_callback_ = std::move(cb);
@@ -113,6 +124,39 @@ void ClusterTracker::AssociateGreedy(
 
         cluster_to_track[p.ci] = static_cast<int>(p.ti);
         track_matched[p.ti]    = true;
+    }
+
+    // -- 2nd pass: Kalman Filter fallback --
+    // 1차 매칭 실패 트랙에 대해 KF 예측 위치 기반으로 재매칭 시도
+    const double kf_dist_sq =
+        params_.kf_fallback_dist_mm * params_.kf_fallback_dist_mm;
+
+    for (size_t t = 0; t < nt; ++t) {
+        if (track_matched[t]) continue;
+        if (!tracks_[t].kf.IsInitialized()) continue;
+
+        // KF 예측 위치
+        double pred_x = tracks_[t].kf.GetX();
+        double pred_y = tracks_[t].kf.GetY();
+
+        double best_d2 = kf_dist_sq;
+        int    best_c  = -1;
+
+        for (size_t c = 0; c < nc; ++c) {
+            if (cluster_to_track[c] != -1) continue;
+            double dx = clusters[c].centroid_x_mm - pred_x;
+            double dy = clusters[c].centroid_y_mm - pred_y;
+            double d2 = dx * dx + dy * dy;
+            if (d2 < best_d2) {
+                best_d2 = d2;
+                best_c  = static_cast<int>(c);
+            }
+        }
+
+        if (best_c >= 0) {
+            cluster_to_track[best_c] = static_cast<int>(t);
+            track_matched[t] = true;
+        }
     }
 }
 
@@ -419,6 +463,12 @@ void ClusterTracker::CheckDumpingConfirmation(std::vector<DumpingEvent>& dump_ev
 
         tr.dump_alert_fired = true;
 
+        // Hotspot 등록: 투기 확정 위치를 hotspot에 추가
+        if (hotspot_positions_.size() >= params_.max_hotspots) {
+            hotspot_positions_.erase(hotspot_positions_.begin());
+        }
+        hotspot_positions_.push_back({tr.x_mm, tr.y_mm});
+
         std::printf("\n[ALERT] 쓰레기 투기 최종 확정!\n"
                     " -> 투기 주체 ID : %d\n"
                     " -> 투기물 ID    : %u\n"
@@ -489,6 +539,15 @@ void ClusterTracker::Update(const std::vector<Cluster>& clusters,
         tr.vx_mm = tr.x_mm - tr.prev_x_mm;
         tr.vy_mm = tr.y_mm - tr.prev_y_mm;
 
+        // 칼만 필터 갱신
+        if (!tr.kf.IsInitialized()) {
+            tr.kf.Init(tr.x_mm, tr.y_mm,
+                       params_.kf_process_noise, params_.kf_measure_noise);
+        } else {
+            tr.kf.Predict();
+            tr.kf.Update(tr.x_mm, tr.y_mm);
+        }
+
         // 궤적 이력 기록 (투기 분리 감지에 사용)
         if (!tr.is_dumped_item && !tr.is_dump_suspect) {
             tr.position_history.push_back({tr.prev_x_mm, tr.prev_y_mm});
@@ -545,6 +604,16 @@ void ClusterTracker::Update(const std::vector<Cluster>& clusters,
         if (!track_matched[t]) {
             tracks_[t].lost_count++;
 
+            // 칼만 필터 예측만 수행 (관측 없이 위치 추정)
+            if (tracks_[t].kf.IsInitialized()) {
+                tracks_[t].kf.Predict();
+                // 예측 위치로 트랙 위치 갱신 (추적 연속성 유지)
+                if (tracks_[t].lost_count <= params_.recovery_max_lost_frames) {
+                    tracks_[t].x_mm = tracks_[t].kf.GetX();
+                    tracks_[t].y_mm = tracks_[t].kf.GetY();
+                }
+            }
+
             if (tracks_[t].is_dump_suspect &&
                 tracks_[t].lost_count > 2)
             {
@@ -591,7 +660,15 @@ void ClusterTracker::Update(const std::vector<Cluster>& clusters,
 
             tr.suspect_confirm_count++;
 
-            if (tr.suspect_confirm_count >= params_.separation_confirm_frames) {
+            // Hotspot 가중치: 과거 투기 지역 근처의 의심 객체는 확인 프레임을 단축
+            uint32_t required_frames = params_.separation_confirm_frames;
+            if (IsInHotspot(tr.x_mm, tr.y_mm) &&
+                required_frames > params_.hotspot_boost_frames)
+            {
+                required_frames -= params_.hotspot_boost_frames;
+            }
+
+            if (tr.suspect_confirm_count >= required_frames) {
                 tr.is_dump_suspect = false;
                 tr.is_dumped_item  = true;
 
