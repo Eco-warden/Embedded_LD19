@@ -523,11 +523,11 @@ void ClusterTracker::Update(const std::vector<Cluster>& clusters,
             tr.width_drop_detected = true;
             tr.width_drop_x_mm     = tr.prev_x_mm;
             tr.width_drop_y_mm     = tr.prev_y_mm;
-            std::printf("[INFO] 폭 감소 감지: ID %u, %.0fmm → %.0fmm "
-                        "(차이=%.0fmm, 위치=(%.0f,%.0f))\n",
-                        tr.id, old_width, tr.width_mm,
-                        old_width - tr.width_mm,
-                        tr.width_drop_x_mm, tr.width_drop_y_mm);
+            // std::printf("[INFO] 폭 감소 감지: ID %u, %.0fmm → %.0fmm "
+            //             "(차이=%.0fmm, 위치=(%.0f,%.0f))\n",
+            //             tr.id, old_width, tr.width_mm,
+            //             old_width - tr.width_mm,
+            //             tr.width_drop_x_mm, tr.width_drop_y_mm);
         } else {
             tr.prev_width_mm = tr.width_mm;
         }

@@ -113,13 +113,13 @@ int main(int argc, char* argv[]) {
     fp.min_intensity        = 15;
     fp.fov_min_deg          = 90.0f;
     fp.fov_max_deg          = 270.0f;
-    fp.min_cluster_width_mm = 30.0;
+    fp.min_cluster_width_mm = 10.0;
     fp.max_cluster_width_mm = 800.0;
     fp.merge_radius_mm      = 300.0;
 
     ld19::DBSCANParams dp;
-    dp.epsilon_mm = 150.0;
-    dp.min_points = 3;
+    dp.epsilon_mm = 250.0;
+    dp.min_points = 2;
 
     ld19::ScanProcessor processor(fp, dp);
 
@@ -130,7 +130,7 @@ int main(int argc, char* argv[]) {
 
     ld19::TrackerParams tp;
     tp.stationary_threshold_mm     = 30.0;
-    tp.departure_frame_count       = 3;
+    tp.departure_frame_count       = 50;
     tp.association_max_dist_mm     = 400.0;
     tp.lost_age_limit              = 10;
     tp.enable_dumping_detection    = true;
@@ -139,11 +139,11 @@ int main(int argc, char* argv[]) {
     tp.dump_stationary_frame_count = 30;
     tp.separation_max_dist_mm      = 400.0;
     tp.separation_min_dist_from_current_mm = 200.0;
-    tp.min_dump_candidate_width_mm = 50.0;
+    tp.min_dump_candidate_width_mm = 10.0;
     tp.separation_confirm_frames   = 5;
     tp.leg_proximity_radius_mm     = 350.0;
     tp.position_history_size       = 30;
-    tp.recovery_max_dist_mm        = 600.0;
+    tp.recovery_max_dist_mm        = 150.0;
     tp.recovery_max_lost_frames    = 3;
     ld19::ClusterTracker tracker(tp);
 

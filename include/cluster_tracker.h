@@ -122,7 +122,7 @@ struct Track {
 // ── 추적기 파라미터 ──────────────────────────────────────────────────
 struct TrackerParams {
     double   stationary_threshold_mm = 50.0;   // 정지 판단 이동거리 (mm)
-    uint32_t departure_frame_count   = 3;      // 이탈 판정 연속 정지 프레임 수
+    uint32_t departure_frame_count   = 50;     // 이탈 판정 연속 정지 프레임 수 (기존 3에서 50으로 증가)
     double   association_max_dist_mm = 500.0;   // 클러스터-트랙 매칭 최대 거리 (mm)
     uint32_t lost_age_limit          = 5;       // 매칭 실패 허용 프레임 수
 
@@ -135,7 +135,7 @@ struct TrackerParams {
 
     // ── 다리 오인식 방지 파라미터 ────────────────────────────────────
     double   separation_min_dist_from_current_mm = 200.0;  // 투기물이 주체 현재 위치에서 최소한 이 거리 이상 떨어져야 함
-    double   min_dump_candidate_width_mm   = 50.0;   // 투기 후보 최소 폭 (다리 하나 ~30~80mm 이므로 이보다 큰 물체만)
+    double   min_dump_candidate_width_mm   = 10.0;   // 50->10: 투기 후보 최소 폭 (작은 병 등 감지)
     uint32_t separation_confirm_frames     = 5;      // 분리 감지 후 이 프레임 동안 독립 존재해야 투기 의심 확정
     double   leg_proximity_radius_mm       = 350.0;  // 확정 단계에서 이 거리 내 사람 트랙 있으면 다리로 간주
 
@@ -145,10 +145,10 @@ struct TrackerParams {
     uint32_t recovery_max_lost_frames      = 3;      // 복구 허용 최대 lost 프레임 수
 
     // -- 폭 감소 감지 (보조 신호) --
-    double   width_drop_threshold_mm       = 40.0;   // 1프레임에 이 값 이상 폭 감소 시 감지
+    double   width_drop_threshold_mm       = 150.0;  // 1프레임에 이 값 이상 폭 감소 시 감지 (기존 40에서 150으로 증가)
 
     // -- 점구름 개수 필터 --
-    size_t   min_dump_candidate_points     = 3;      // 투기 후보 최소 점구름 수
+    size_t   min_dump_candidate_points     = 2;      // 3->2: 투기 후보 최소 점구름 수
 
     // -- 투기 주체 이탈 확인 --
     double   person_depart_dist_mm         = 500.0;  // 주체가 투기물에서 이 거리 이상 떨어져야 확정
