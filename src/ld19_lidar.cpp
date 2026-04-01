@@ -141,6 +141,8 @@ Error LD19Lidar::GetScanFrame(ScanFrame& frame) {
         default:
             return Error::ScanTimeout;
     }
+    
+    return Error::ScanTimeout;
 }
 
 // ── GetScanFrequency ─────────────────────────────────────────────────

@@ -15,16 +15,18 @@
  *   ./ld19_sim [API_URL]
  */
 
-#include "scan_processor.h"
-#include "background_filter.h"
-#include "cluster_tracker.h"
-#include "event_notifier.h"
-
+#define __SANE_USERSPACE_TYPES__
+#include <stdint.h>
 #include <csignal>
 #include <cstdio>
 #include <cmath>
 #include <vector>
 #include <unistd.h>
+
+#include "scan_processor.h"
+#include "background_filter.h"
+#include "cluster_tracker.h"
+#include "event_notifier.h"
 
 // ── Ctrl+C 처리 ─────────────────────────────────────────────────────
 static volatile sig_atomic_t g_running = 1;
