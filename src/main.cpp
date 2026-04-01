@@ -148,7 +148,9 @@ int main(int argc, char* argv[]) {
 
     ld19::DBSCANParams dp;
     dp.epsilon_mm = 250.0;  // 150->250: 점구름 간 간격이 있어도 하나로 연결
-    dp.min_points = 2;      // 3->2: LD19 스펙상 작은 물체는 점 2개로 찍히는 경우 많음;
+    dp.min_points = 2;      // 3->2: LD19 스펙상 작은 물체는 점 2개로 찍히는 경우 많음
+
+    ld19::ScanProcessor processor(fp, dp);
 
     // ── 배경 필터 ────────────────────────────────────────────────────
     ld19::BackgroundFilterParams bgp;
