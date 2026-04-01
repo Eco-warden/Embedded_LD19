@@ -28,6 +28,15 @@
  *   sudo ./ld19_lidar_app [시리얼포트] [API_URL] [Unity_IP:PORT]
  */
 
+#include <cmath>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <unistd.h>
+
 #include "background_filter.h"
 #include "camera_module.h"
 #include "cluster_tracker.h"
@@ -37,15 +46,6 @@
 #include "pir_sensor.h"
 #include "scan_processor.h"
 #include "udp_sender.h"
-
-#include <cmath>
-#include <csignal>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <iostream>
-#include <string>
-#include <unistd.h>
 
 // ── Ctrl+C 처리 ─────────────────────────────────────────────────────
 static volatile sig_atomic_t g_running = 1;

@@ -1,0 +1,1 @@
+namespace ldlidar { class LDLidarDriver {}; }

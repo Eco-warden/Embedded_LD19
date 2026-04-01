@@ -29,14 +29,14 @@
 
 #pragma once
 
-#include "scan_processor.h"
-#include "kalman_filter.h"
-
 #include <cstdint>
 #include <vector>
 #include <utility>
 #include <chrono>
 #include <functional>
+
+#include "scan_processor.h"
+#include "kalman_filter.h"
 
 namespace ld19 {
 

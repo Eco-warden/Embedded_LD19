@@ -19,13 +19,13 @@
 
 #pragma once
 
-#include "ld19_lidar.h"
-
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <unordered_map>
 #include <vector>
+
+#include "ld19_lidar.h"
 
 namespace ld19 {
 

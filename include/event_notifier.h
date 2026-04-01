@@ -31,8 +31,6 @@
 
 #pragma once
 
-#include "cluster_tracker.h"
-
 #include <string>
 #include <vector>
 #include <queue>
@@ -40,6 +38,8 @@
 #include <thread>
 #include <atomic>
 #include <condition_variable>
+
+#include "cluster_tracker.h"
 
 namespace ld19 {
 

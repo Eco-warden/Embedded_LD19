@@ -14,6 +14,7 @@
  * @date  2026
  */
 
+#include <nlohmann/json.hpp>
 #include "event_notifier.h"
 
 #include <cstdio>
@@ -101,7 +102,7 @@ std::string EventNotifier::ToJson(const DepartureEvent& evt) {
     return buf;
 }
 
-#include <nlohmann/json.hpp>
+
 
 // ── DumpingEvent → JSON ─────────────────────────────────────────────
 std::string EventNotifier::DumpingToJson(const DumpingEvent& evt, const std::string& image_base64) {
