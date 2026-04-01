@@ -61,6 +61,9 @@ struct FilterParams {
       0.0; // centroid 간 이 거리 이내 클러스터를 병합 (0=비활성)
   double merge_max_width_ratio =
       2.5; // 폭 비율이 이 값 이하인 쌍만 병합 (다리끼리는 OK, 사람+봉투는 NO)
+
+  // ── 정적 배경 필터 ────────────────────────────────────────────
+  double static_bg_margin_mm = 100.0; // 배경 심도보다 100mm 이상 튀어나온(가까운) 점만 남김 (벽면 밀착 객체 분리)
 };
 
 // ── DBSCAN 파라미터 ──────────────────────────────────────────────────
@@ -89,6 +92,17 @@ public:
   void FilterNoise(const ScanFrame &raw, ScanFrame &filtered);
 
   /**
+   * @brief 정적 배경(방 형태)의 깊이 맵을 학습합니다.
+   *        0.1도 단위의 3600개 슬롯에 EMA(지수 이동 평균) 방식으로 거리를 기록.
+   */
+  void LearnStaticBackground(const ScanFrame &raw);
+
+  /**
+   * @brief 정적 배경 필터: 학습된 벽면과 인접한 포인트 삭제
+   */
+  void FilterStaticBackground(const ScanFrame &raw, ScanFrame &filtered);
+
+  /**
    * @brief 극좌표 → 직교좌표 변환
    *        x = distance * cos(angle),  y = distance * sin(angle)
    */
@@ -112,6 +126,9 @@ public:
 private:
   FilterParams filter_;
   DBSCANParams dbscan_;
+
+  // 360도 공간 0.1도 단위의 정적 배경 깊이 (방의 형태)
+  uint16_t static_bg_depth_[3600] = {0};
 
   static constexpr double kDegToRad = M_PI / 180.0;
 

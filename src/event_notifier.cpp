@@ -101,31 +101,27 @@ std::string EventNotifier::ToJson(const DepartureEvent& evt) {
     return buf;
 }
 
+#include <nlohmann/json.hpp>
+
 // ── DumpingEvent → JSON ─────────────────────────────────────────────
-std::string EventNotifier::DumpingToJson(const DumpingEvent& evt) {
-    char buf[1024];
-    std::snprintf(buf, sizeof(buf),
-        "{"
-            "\"type\":\"dumping\","
-            "\"timestamp\":\"%s\","
-            "\"person_id\":%u,"
-            "\"person_x\":%.1f,"
-            "\"person_y\":%.1f,"
-            "\"person_cumulative_dist\":%.1f,"
-            "\"object_id\":%u,"
-            "\"object_x\":%.1f,"
-            "\"object_y\":%.1f"
-        "}",
-        EscapeJson(MsToIso8601(evt.timestamp_ms)).c_str(),
-        evt.person_track_id,
-        evt.person_x_mm,
-        evt.person_y_mm,
-        evt.person_cumulative_dist_mm,
-        evt.object_track_id,
-        evt.object_x_mm,
-        evt.object_y_mm
-    );
-    return buf;
+std::string EventNotifier::DumpingToJson(const DumpingEvent& evt, const std::string& image_base64) {
+    nlohmann::json j;
+    j["type"] = "dumping";
+    j["timestamp"] = MsToIso8601(evt.timestamp_ms);
+    j["person_id"] = evt.person_track_id;
+    j["person_x"] = evt.person_x_mm;
+    j["person_y"] = evt.person_y_mm;
+    j["person_cumulative_dist"] = evt.person_cumulative_dist_mm;
+    j["object_id"] = evt.object_track_id;
+    j["object_x"] = evt.object_x_mm;
+    j["object_y"] = evt.object_y_mm;
+    
+    if (!image_base64.empty()) {
+        j["image_base64"] = image_base64;
+    }
+
+    // std::string을 한 번에 반환 (정적 버퍼 오버플로우 방지)
+    return j.dump();
 }
 
 // ── libcurl HTTP POST ───────────────────────────────────────────────
@@ -187,8 +183,8 @@ void EventNotifier::Send(const DepartureEvent& evt) {
     EnqueueJson(ToJson(evt));
 }
 
-void EventNotifier::SendDumping(const DumpingEvent& evt) {
-    EnqueueJson(DumpingToJson(evt));
+void EventNotifier::SendDumping(const DumpingEvent& evt, const std::string& image_base64) {
+    EnqueueJson(DumpingToJson(evt, image_base64));
 }
 
 // ── SendLoop: 전송 전용 스레드 루프 ─────────────────────────────────

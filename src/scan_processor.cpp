@@ -38,9 +38,18 @@ size_t ScanProcessor::Process(const ScanFrame& raw, std::vector<Cluster>& cluste
         return 0;
     }
 
+    // 1.5) 정적 배경 필터 적용 (벽면 밀착 객체 분리용)
+    ScanFrame bg_filtered;
+    FilterStaticBackground(filtered, bg_filtered);
+
+    if (bg_filtered.empty()) {
+        clusters.clear();
+        return 0;
+    }
+
     // 2) 극좌표 → 직교좌표
     std::vector<CartesianPoint> cart;
-    ToCartesian(filtered, cart);
+    ToCartesian(bg_filtered, cart);
 
     // 3) DBSCAN 클러스터링
     ClusterDBSCAN(cart, clusters);
@@ -67,6 +76,51 @@ void ScanProcessor::FilterNoise(const ScanFrame& raw, ScanFrame& filtered) {
         if (pt.angle_deg < filter_.fov_min_deg ||
             pt.angle_deg > filter_.fov_max_deg)              continue;
         filtered.push_back(pt);
+    }
+}
+
+// ── 정적 배경 학습 ──────────────────────────────────────────────────
+void ScanProcessor::LearnStaticBackground(const ScanFrame& raw) {
+    for (const auto& pt : raw) {
+        if (pt.distance_mm == 0) continue;
+        
+        int idx = static_cast<int>(std::round(pt.angle_deg * 10.0)) % 3600;
+        if (idx < 0) idx += 3600;
+        
+        if (static_bg_depth_[idx] == 0) {
+            static_bg_depth_[idx] = pt.distance_mm;
+        } else {
+            // 지수이동평균(EMA) 모델: 낡은 값을 천천히 갱신 (90% 보존, 10% 최신 반영)
+            static_bg_depth_[idx] = (static_bg_depth_[idx] * 9 + pt.distance_mm) / 10;
+        }
+    }
+}
+
+// ── 정적 배경 필터링 ────────────────────────────────────────────────
+void ScanProcessor::FilterStaticBackground(const ScanFrame& raw, ScanFrame& filtered) {
+    filtered.clear();
+    filtered.reserve(raw.size());
+
+    for (const auto& pt : raw) {
+        int idx = static_cast<int>(std::round(pt.angle_deg * 10.0)) % 3600;
+        if (idx < 0) idx += 3600;
+        
+        uint16_t bg_dist = static_bg_depth_[idx];
+        
+        // 해당 슬롯이 학습 안된 곳이면 (0이면) 일단 통과시킴
+        if (bg_dist == 0) {
+            filtered.push_back(pt);
+            continue;
+        }
+        
+        // 측정 거리가 배경보다 설정된 margin 이상으로 가까우면 = 앞으로 튀어나온 객체 = 전경
+        // 측정 거리가 배경과 비슷하면 = 벽면
+        // 측정 거리가 배경보다 멀리 측정되면 = 유리창 반사 등의 노이즈
+        if (pt.distance_mm < bg_dist) {
+            if ((bg_dist - pt.distance_mm) > filter_.static_bg_margin_mm) {
+                filtered.push_back(pt);
+            }
+        }
     }
 }
 

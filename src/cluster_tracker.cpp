@@ -282,6 +282,28 @@ void ClusterTracker::DetectSeparation(
         }
         if (matches_lost_track) continue;
 
+        // (3) 보행자 트랙 근처(leg_proximity 반경 내)에 
+        //     새로 발생한 클러스터는 투기 주체가 멀어질 때까지 무시.
+        //     (예: 발 바로 옆에 큰 봉투를 내려놓았을 때, 너무 일찍 일반 트랙으로
+        //      등록되는 것을 막아, 사람이 멀어지는 시점에 투기물로 생성되도록 유도)
+        bool near_existing_person = false;
+        for (const auto& tr : tracks_) {
+            if (tr.is_dumped_item || tr.is_dump_suspect) continue;
+            double dx = clusters[c].centroid_x_mm - tr.x_mm;
+            double dy = clusters[c].centroid_y_mm - tr.y_mm;
+            
+            // 사람 중심으로부터 300mm 이내의 미확인 클러스터는 
+            // 사람이 충분히 멀어질 때까지 트랙 생성을 보류 (크기 무관)
+            if (dx * dx + dy * dy < 300.0 * 300.0) {
+                near_existing_person = true;
+                break;
+            }
+        }
+        if (near_existing_person) {
+            cluster_claimed[c] = true;
+            continue; // 트랙 생성 일시 보류
+        }
+
         // 조건 (1)+(2): 궤적 이력 근처 + 현재 위치에서 떨어짐
         bool is_separation = false;
         int  person_id     = -1;
@@ -615,7 +637,7 @@ void ClusterTracker::Update(const std::vector<Cluster>& clusters,
             }
 
             if (tracks_[t].is_dump_suspect &&
-                tracks_[t].lost_count > 2)
+                tracks_[t].lost_count > 10) // 2->10: 1초 정도 가려져도 의심 유지 (다리에 가려지는 현상 대비)
             {
                 tracks_[t].is_dump_suspect      = false;
                 tracks_[t].source_id            = -1;
@@ -709,8 +731,8 @@ void ClusterTracker::Update(const std::vector<Cluster>& clusters,
         std::remove_if(tracks_.begin(), tracks_.end(),
                        [this](const Track& tr) {
                            uint32_t limit = params_.lost_age_limit;
-                           if (tr.is_dumped_item && !tr.dump_alert_fired) {
-                               limit *= 3;
+                           if (tr.is_dump_suspect || tr.is_dumped_item) {
+                               limit = 600; // 60초 유지 (시야 가려짐에 의해 삭제 후 다시 투기 인식 방지)
                            }
                            if (tr.lost_count > limit) {
                                if (tr.is_dumped_item && tr.dump_alert_fired) {

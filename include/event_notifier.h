@@ -68,8 +68,9 @@ public:
 
     /**
      * @brief 투기 이벤트를 비동기 전송 큐에 넣는다 (논블로킹).
+     * @param image_base64 (선택) 카메라 모듈이 캡처한 Base64 인코딩 이미지 문자열
      */
-    void SendDumping(const DumpingEvent& evt);
+    void SendDumping(const DumpingEvent& evt, const std::string& image_base64 = "");
 
     /**
      * @brief 큐 파일에 쌓인 이벤트를 모두 재전송한다.
@@ -115,7 +116,7 @@ private:
     std::condition_variable     retry_cv_;
 
     static std::string ToJson(const DepartureEvent& evt);
-    static std::string DumpingToJson(const DumpingEvent& evt);
+    static std::string DumpingToJson(const DumpingEvent& evt, const std::string& image_base64);
     static std::string MsToIso8601(uint64_t epoch_ms);
 
     bool HttpPost(const std::string& json_body);

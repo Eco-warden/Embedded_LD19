@@ -44,6 +44,15 @@ target_link_libraries(ldlidar_driver PUBLIC pthread)
 # ── libcurl ───────────────────────────────────────────────────────────
 find_package(CURL REQUIRED)
 
+# ── OpenCV (Optional, for Camera Module) ──────────────────────────────
+find_package(OpenCV QUIET)
+if(OpenCV_FOUND)
+  add_definitions(-DUSE_OPENCV)
+  message(STATUS "OpenCV found, CameraModule will be compiled with camera support.")
+else()
+  message(WARNING "OpenCV not found, CameraModule will return empty images.")
+endif()
+
 # ── nlohmann/json (header-only, FetchContent) ────────────────────────
 include(FetchContent)
 FetchContent_Declare(
@@ -64,6 +73,7 @@ add_executable(ld19_lidar_app
   src/udp_sender.cpp
   src/json_packet.cpp
   src/pir_sensor.cpp
+  src/camera_module.cpp
   src/main.cpp
 )
 
@@ -78,6 +88,11 @@ target_link_libraries(ld19_lidar_app PRIVATE
   CURL::libcurl
   nlohmann_json::nlohmann_json
 )
+
+if(OpenCV_FOUND)
+  target_include_directories(ld19_lidar_app PRIVATE ${OpenCV_INCLUDE_DIRS})
+  target_link_libraries(ld19_lidar_app PRIVATE ${OpenCV_LIBS})
+endif()
 
 # ── Simulation (센서 없이 파이프라인 테스트) ───────────────────────────
 add_executable(ld19_sim

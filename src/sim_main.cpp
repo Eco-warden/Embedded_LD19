@@ -123,8 +123,6 @@ int main(int argc, char* argv[]) {
 
     ld19::ScanProcessor processor(fp, dp);
 
-    ld19::ScanProcessor processor(fp, dp);
-
     ld19::BackgroundFilterParams bgp;
     bgp.learning_frames = 50;
     bgp.match_radius_mm = 150.0;

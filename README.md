@@ -52,6 +52,7 @@
 |------|------|
 | **실시간 점구름 수집** | LD19 LiDAR로 360도 2D 점구름을 10Hz로 수집, 직교좌표 변환 |
 | **투기 자동 탐지** | DBSCAN 클러스터링 + 궤적 기반 분리 감지 + 클러스터 분열 + 폭 감소 감지 |
+| **Edge 비전 검증** | DFROBOT FIT0730 야간 카메라 연동, 투기 순간만 스냅샷 캡처 (AI 비전 처리 없는 프라이버시 보호) |
 | **칼만 필터 추적** | 2D 등속 칼만 필터로 매칭 실패 시 예측 위치 기반 fallback 재매칭 |
 | **이중 배경 모델** | 단기(100프레임) + 장기(500프레임) 이중 배경으로 투기물 배경 흡수 방지 |
 | **Hotspot 가중치** | 과거 투기 확정 위치 반경 1m 내 신규 의심 객체의 확인 시간 단축 |
@@ -68,8 +69,9 @@
 ```mermaid
 graph TB
     subgraph HW["하드웨어 계층"]
-        LD19["LD19 LiDAR<br/>GPIO UART /dev/ttyAMA0<br/>230400 baud"]
+        LD19["LD19 LiDAR<br/>UART /dev/ttyAMA0"]
         PIR["PIR 센서<br/>보조 감지"]
+        CAM["FIT0730 카메라<br/>/dev/video0"]
     end
 
     subgraph EMB["임베디드 계층 (C++17)"]
@@ -97,8 +99,9 @@ graph TB
     SCAN --> PROC
     PROC --> BG
     BG --> TRACK
-    TRACK -->|HTTP POST| NOTIF
+    TRACK -->|이벤트 + 이미지 Base64| NOTIF
     TRACK -->|UDP| UDP
+    CAM -.->|투기 발생 시 스냅샷| TRACK
     NOTIF -->|이탈/투기 이벤트| API
     API --> DB
     API --> WS
@@ -139,13 +142,13 @@ cluster_tracker ── AssociateGreedy(+칼만필터 fallback) → 궤적 분석
 
 | 계층 | 기술 | 비고 |
 |------|------|------|
-| **하드웨어** | LD19 LiDAR (LDROBOT), PIR 센서 | GPIO UART 230400 baud |
-| **임베디드** | C++17, ldlidar_stl_sdk, POSIX socket | Grid-DBSCAN, 칼만 필터, 이중 배경 모델, Hotspot |
+| **하드웨어** | LD19 LiDAR, PIR 센서, FIT0730 USB 카메라 | 센서 퓨전 (LiDAR + PIR + Camera) |
+| **임베디드** | C++17, ldlidar_stl_sdk, OpenCV, POSIX socket | Grid-DBSCAN, 칼만 필터, 이중 배경 모델, Base64 |
 | **백엔드** | Python 3.11, FastAPI, WebSocket | 0.1초 미만 이벤트 푸시 |
 | **데이터베이스** | PostgreSQL 15 + PostGIS 3.3 | WORM/Append-Only, 트리거 기반 위변조 차단 |
 | **시각화** | Unity 2022.3 LTS, VFX Graph | UDP 실시간 수신, 3D 디지털 트윈 |
 | **보안** | OIDC/SAML SSO, RBAC, 2FA, Zero Trust | TLS/SSH 전 구간 암호화 |
-| **빌드** | CMake 3.16+, FetchContent (nlohmann/json) | libcurl, ldlidar_stl_sdk 정적 링크 |
+| **빌드** | CMake 3.16+, FetchContent (nlohmann/json) | libcurl, ldlidar_stl_sdk, OpenCV 정적/동적 링크 |
 
 ---
 
@@ -256,7 +259,7 @@ chmod +x setup.sh
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential cmake git libcurl4-openssl-dev
+sudo apt install -y build-essential cmake git libcurl4-openssl-dev libopencv-dev
 
 mkdir -p thirdparty
 git clone https://github.com/ldrobotSensorTeam/ldlidar_stl_sdk.git thirdparty/ldlidar_stl_sdk
