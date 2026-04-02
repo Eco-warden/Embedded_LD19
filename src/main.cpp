@@ -33,13 +33,14 @@
 #endif
 
 #include <cstdint>
+#include <iostream>
+#include <string>
+#include <vector>
 #include <cmath>
-#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
-#include <string>
+#include <csignal>
 #include <unistd.h>
 
 #include "background_filter.h"

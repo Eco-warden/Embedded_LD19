@@ -20,10 +20,14 @@
 #endif
 
 #include <cstdint>
-#include <csignal>
-#include <cstdio>
-#include <cmath>
+#include <iostream>
+#include <string>
 #include <vector>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <csignal>
 #include <unistd.h>
 
 #include "scan_processor.h"
