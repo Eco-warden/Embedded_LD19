@@ -38,9 +38,20 @@
   sudo ./build/ld19_lidar_app /dev/ttyAMA0 https://api.ecowarden.systems/api/dumping-event 192.168.10.175:5005
   ```
 
-## 5. 향후 참고 사항
-- 현재 Unity용 JSON에서 `count`, `vx`, `vy`는 **삭제되지 않고 주석 처리**되어 있으므로, 나중에 필요할 때 즉시 복구 가능함.
-- `main.cpp` 내부의 기본 IP 설정보다 실행 시 인자로 받는 IP가 우선순위가 높음.
+## 5. 트러블슈팅 및 환경 설정 (중요)
+
+### A. aarch64(ARM64) 환경 빌드 이슈 해결
+- **문제**: `__SANE_USERSPACE_TYPES__` 매크로 중복 정의 및 `uint64_t` 타입 불일치(`unsigned long` vs `unsigned long long`)로 인한 컴파일 에러 발생.
+- **원인**: 리눅스 커널 헤더와 유저 공간 헤더 간의 타입 정의 방식 충돌.
+- **해결 방법**:
+    1.  **CMake 전역 정의**: `CMakeLists.txt`에 `add_compile_options(-D__SANE_USERSPACE_TYPES__)`를 추가하여 빌드 시스템 차원에서 일관성 유지.
+    2.  **소스 코드 정리**: `src/sim_main.cpp` 등에서 개별적으로 선언된 `#define __SANE_USERSPACE_TYPES__` 제거.
+    3.  **헤더 포함 순서 최적화**: 표준 C++ 헤더(`<cstdint>`, `<csignal>` 등)를 시스템/커널 헤더보다 항상 먼저 포함하도록 조정.
+
+### B. 빌드 및 실행 권장 사양
+- **OS**: Linux (Ubuntu 20.04+ 권장, aarch64/x86_64)
+- **도구**: CMake 3.16+, GCC/G++ 9+
+- **빌드 명령어**: `cd build && cmake .. && make -j$(nproc)`
 
 ---
-**최종 업데이트 시각**: 
+**최종 업데이트 시각**: 2026-04-02 (KST)

@@ -15,8 +15,7 @@
  *   ./ld19_sim [API_URL]
  */
 
-#define __SANE_USERSPACE_TYPES__
-#include <stdint.h>
+#include <cstdint>
 #include <csignal>
 #include <cstdio>
 #include <cmath>
