@@ -117,7 +117,7 @@ std::string JsonPacketSender::Serialize(
         j_cl["id"]    = static_cast<int>(i);
         j_cl["x"]     = std::round(cl.centroid_x_mm * 10.0) / 10.0;
         j_cl["y"]     = std::round(cl.centroid_y_mm * 10.0) / 10.0;
-        j_cl["count"] = static_cast<int>(cl.points.size());
+        // j_cl["count"] = static_cast<int>(cl.points.size());
         j_cl["type"]  = ResolveType(cl, tracks);
         j_clusters.push_back(std::move(j_cl));
     }
@@ -138,8 +138,8 @@ std::string JsonPacketSender::Serialize(
             case TrackState::Lost:       state_str = "lost"; break;
         }
         j_tr["state"]          = state_str;
-        j_tr["vx"]             = std::round(tr.vx_mm * 10.0) / 10.0;
-        j_tr["vy"]             = std::round(tr.vy_mm * 10.0) / 10.0;
+        // j_tr["vx"]             = std::round(tr.vx_mm * 10.0) / 10.0;
+        // j_tr["vy"]             = std::round(tr.vy_mm * 10.0) / 10.0;
         j_tr["is_dumped_item"] = tr.is_dumped_item;
         j_tr["is_dump_suspect"]= tr.is_dump_suspect;
 
@@ -175,7 +175,8 @@ std::string JsonPacketSender::Serialize(
         };
     }
 
-    // -- 최종 패킷 조립 --
+    // -- 최종 패킷 조립 (기존 형식 주석 처리) --
+    /*
     json packet;
     packet["frame_id"]        = frame_id;
     packet["timestamp"]       = MsToIso8601(now);
@@ -183,6 +184,12 @@ std::string JsonPacketSender::Serialize(
     packet["tracks"]          = std::move(j_tracks);
     packet["departure_event"] = std::move(j_dep_event);
     packet["dumping_event"]   = std::move(j_dump_event);
+    */
+
+    // -- 새 형식: {"type": "FRAME", "objects": [...]} --
+    json packet;
+    packet["type"]    = "FRAME";
+    packet["objects"] = std::move(j_clusters);
 
     return packet.dump();
 }

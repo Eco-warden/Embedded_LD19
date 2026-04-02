@@ -111,7 +111,7 @@ JSON POST 전송            JSON UDP 전송
 | DBSCAN minPoints | 5 | 코어 포인트 판정 최소 이웃 수 |
 | 정지 판정 기준 | 50mm | 연속 프레임 간 중심점 이동거리가 이 값 미만이면 정지로 판정 |
 | 이탈 판정 프레임 수 | 3프레임 | 이동 이력이 있는 객체가 연속 3프레임 정지 시 이탈(투기)로 판정 |
-| HTTP 엔드포인트 | `http://localhost:8000/api/events` | FastAPI 이벤트 수신 서버 |
+| HTTP 엔드포인트 | `https://api.ecowarden.systems/api/dumping-event` | FastAPI 이벤트 수신 서버 |
 | HTTP 타임아웃 | 3000ms | libcurl 연결 + 응답 타임아웃 |
 | UDP 목적지 | `127.0.0.1:9000` | Unity 클라이언트 수신 주소 |
 | UDP 최대 패킷 크기 | 65507 bytes | UDP datagram 최대 payload, 초과 시 클러스터 자동 잘림 |
@@ -190,7 +190,7 @@ sudo ./build/ld19_lidar_app /dev/ttyUSB0 http://192.168.1.10:8000/api/events 192
 | 인자 | 기본값 | 설명 |
 |---|---|---|
 | `argv[1]` | `/dev/ttyUSB0` | LD19 시리얼 포트 |
-| `argv[2]` | `http://localhost:8000/api/events` | FastAPI 이벤트 수신 엔드포인트 |
+| `argv[2]` | `https://api.ecowarden.systems/api/dumping-event` | FastAPI 이벤트 수신 엔드포인트 |
 | `argv[3]` | `127.0.0.1:9000` | Unity UDP 수신 주소 |
 
 ### 예시 출력
@@ -201,7 +201,7 @@ Serial     : /dev/ttyUSB0 @ 230400
 Filter     : 30 ~ 12000 mm
 DBSCAN     : eps=150mm, minPts=5
 Tracker    : stop=50mm, depart=3 frames
-HTTP API   : http://localhost:8000/api/events
+HTTP API   : https://api.ecowarden.systems/api/dumping-event
 UDP Unity  : 127.0.0.1:9000
 
 [INFO] LiDAR started. Press Ctrl+C to stop.
@@ -233,7 +233,7 @@ UDP Unity  : 127.0.0.1:9000
 
 이탈(투기) 판정 시에만 전송됩니다.
 
-**엔드포인트**: `POST http://localhost:8000/api/events`
+**엔드포인트**: `POST https://api.ecowarden.systems/api/dumping-event`
 
 ```json
 {
@@ -263,44 +263,31 @@ UDP Unity  : 127.0.0.1:9000
 
 ```json
 {
-  "frame_id": 42,
-  "timestamp": "2026-01-01T00:00:00.123Z",
-  "clusters": [
+  "type": "FRAME",
+  "objects": [
     {
       "id": 0,
       "x": 1200.0,
       "y": 350.0,
-      "count": 12,
       "type": "normal"
     },
     {
       "id": 1,
       "x": 800.0,
       "y": 200.0,
-      "count": 8,
       "type": "abandoned"
     }
-  ],
-  "event": {
-    "type": "abandoned",
-    "x": 800.0,
-    "y": 200.0,
-    "cluster_id": 1,
-    "timestamp": "2026-01-01T00:00:00Z"
-  }
+  ]
 }
 ```
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
-| `frame_id` | int | 프레임 번호 |
-| `timestamp` | string | ISO 8601 패킷 생성 시각 |
-| `clusters[].id` | int | 클러스터 번호 |
-| `clusters[].x` | float | 클러스터 중심 X (mm) |
-| `clusters[].y` | float | 클러스터 중심 Y (mm) |
-| `clusters[].count` | int | 클러스터 내 포인트 수 |
-| `clusters[].type` | string | `"normal"` 또는 `"abandoned"` |
-| `event` | object \| null | 이탈 이벤트 (없으면 `null`) |
+| `type` | string | 항상 `"FRAME"` |
+| `objects[].id` | int | 클러스터 번호 |
+| `objects[].x` | float | 클러스터 중심 X (mm) |
+| `objects[].y` | float | 클러스터 중심 Y (mm) |
+| `objects[].type` | string | `"normal"` 또는 `"abandoned"` |
 
 ---
 
@@ -399,7 +386,7 @@ sudo apt install build-essential
    ```
 4. **IP 주소 확인**: `127.0.0.1`은 로컬 전용. 다른 PC로 보내려면 해당 PC의 실제 IP를 지정
    ```bash
-   ./build/ld19_lidar_app /dev/ttyUSB0 http://localhost:8000/api/events 192.168.1.50:9000
+   ./build/ld19_lidar_app /dev/ttyUSB0 https://api.ecowarden.systems/api/dumping-event 192.168.1.50:9000
    ```
 5. **Unity 측 오류 로그**: Unity Console 창에서 `[LD19-JSON]` 로그 확인
 
@@ -424,12 +411,12 @@ sudo apt install build-essential
    ```
 2. **엔드포인트 접속 테스트**:
    ```bash
-   curl http://localhost:8000/health
+   curl https://api.ecowarden.systems/health
    # {"status":"ok"} 응답 확인
    ```
 3. **원격 서버인 경우**: `argv[2]`에 정확한 URL 지정
    ```bash
-   ./build/ld19_lidar_app /dev/ttyUSB0 http://192.168.1.10:8000/api/events
+   ./build/ld19_lidar_app /dev/ttyUSB0 https://api.ecowarden.systems/api/dumping-event
    ```
 
 서버가 일시적으로 다운되어도 이벤트는 `/tmp/ld19_event_queue.jsonl`에 자동 큐잉되며, 서버 복구 후 백그라운드 스레드가 10초 주기로 재전송합니다.

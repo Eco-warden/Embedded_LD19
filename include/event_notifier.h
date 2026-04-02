@@ -45,7 +45,7 @@ namespace ld19 {
 
 // ── 전송 설정 ────────────────────────────────────────────────────────
 struct NotifierConfig {
-    std::string endpoint_url    = "http://localhost:8000/api/v1/events";
+    std::string endpoint_url    = "https://api.ecowarden.systems/api/dumping-event";
     std::string queue_file_path = "/tmp/ld19_event_queue.jsonl";
     long        timeout_ms      = 3000;        // HTTP 타임아웃 (ms)
     uint32_t    max_retries     = 3;           // 큐 재전송 시 최대 재시도 횟수

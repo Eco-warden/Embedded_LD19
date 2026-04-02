@@ -121,7 +121,7 @@ int main(int argc, char *argv[]) {
 
   // ── 인자 파싱 ────────────────────────────────────────────────────
   // argv[1]: 시리얼 포트       (기본 /dev/ttyUSB0)
-  // argv[2]: FastAPI URL       (기본 http://localhost:8000/api/v1/events)
+  // argv[2]: FastAPI URL       (기본 https://api.ecowarden.systems/api/dumping-event)
   // argv[3]: Unity IP:PORT     (기본 127.0.0.1:9090)
   const char *serial_port = (argc > 1) ? argv[1] : "/dev/ttyAMA0";
   const char *api_url =
