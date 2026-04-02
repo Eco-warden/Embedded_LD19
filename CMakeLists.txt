@@ -42,6 +42,7 @@ set(LDLIDAR_SDK_INCLUDE_DIRS
 add_library(ldlidar_driver STATIC ${LDLIDAR_SDK_SOURCES})
 target_include_directories(ldlidar_driver PUBLIC ${LDLIDAR_SDK_INCLUDE_DIRS})
 target_link_libraries(ldlidar_driver PUBLIC pthread)
+target_compile_definitions(ldlidar_driver PUBLIC __SANE_USERSPACE_TYPES__)
 
 # ── libcurl ───────────────────────────────────────────────────────────
 find_package(CURL REQUIRED)
