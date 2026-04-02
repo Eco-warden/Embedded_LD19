@@ -110,9 +110,10 @@ static constexpr size_t MAX_CLUSTERS_PER_PKT =
 
 // ── UDP 전송 설정 ────────────────────────────────────────────────────
 struct UdpSenderConfig {
-    std::string dest_ip   = "127.0.0.1";
-    uint16_t    dest_port = 9090;
+  std::string dest_ip = "192.168.20.52";
+  uint16_t dest_port = 9090;
 };
+
 
 // ── UDP 송신기 ───────────────────────────────────────────────────────
 class UdpSender {

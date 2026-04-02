@@ -91,6 +91,8 @@ target_link_libraries(ld19_lidar_app PRIVATE
   nlohmann_json::nlohmann_json
 )
 
+target_compile_definitions(ld19_lidar_app PRIVATE __SANE_USERSPACE_TYPES__)
+
 if(OpenCV_FOUND)
   target_include_directories(ld19_lidar_app PRIVATE ${OpenCV_INCLUDE_DIRS})
   target_link_libraries(ld19_lidar_app PRIVATE ${OpenCV_LIBS})
@@ -120,3 +122,5 @@ target_link_libraries(ld19_sim PRIVATE
   CURL::libcurl
   nlohmann_json::nlohmann_json
 )
+
+target_compile_definitions(ld19_sim PRIVATE __SANE_USERSPACE_TYPES__)

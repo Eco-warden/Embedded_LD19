@@ -32,11 +32,12 @@
 
 ## 4. 실행 및 설정 정보
 - **기본 API 주소**: `https://api.ecowarden.systems/api/dumping-event` (운영 서버 주소로 고정됨).
-- **Unity 기본 주소**: 실행 시 인자가 없을 경우 `127.0.0.1:9090`을 시도하지만, 실제 Unity PC IP를 인자로 주는 것을 권장.
-- **실행 명령어 예시**:
+- **Unity 기본 주소**: 실행 시 인자가 없을 경우 `192.168.20.52:9090`를 시도하며, 실제 Unity PC IP를 인자로 주는 것을 권장.
+- **실행 예시**:
   ```bash
-  sudo ./build/ld19_lidar_app /dev/ttyAMA0 https://api.ecowarden.systems/api/dumping-event 192.168.10.175:5005
+  sudo ./build/ld19_lidar_app /dev/ttyAMA0 https://api.ecowarden.systems/api/dumping-event 192.168.20.52:9090
   ```
+
 
 ## 5. 트러블슈팅 및 환경 설정 (중요)
 

@@ -32,6 +32,11 @@
 #define __SANE_USERSPACE_TYPES__
 #endif
 
+#include <stdint.h> // uint64_t 선언 선점
+#ifdef __arm64__
+#define __u64 uint64_t
+#endif
+
 #include <cstdint>
 #include <cmath>
 #include <csignal>
@@ -127,11 +132,11 @@ int main(int argc, char *argv[]) {
   // ── 인자 파싱 ────────────────────────────────────────────────────
   // argv[1]: 시리얼 포트       (기본 /dev/ttyUSB0)
   // argv[2]: FastAPI URL       (기본 https://api.ecowarden.systems/api/dumping-event)
-  // argv[3]: Unity IP:PORT     (기본 127.0.0.1:9090)
+  // argv[3]: Unity IP:PORT     (기본 192.168.20.52:9090)
   const char *serial_port = (argc > 1) ? argv[1] : "/dev/ttyAMA0";
   const char *api_url =
       (argc > 2) ? argv[2] : "https://api.ecowarden.systems/api/dumping-event";
-  const char *unity_addr = (argc > 3) ? argv[3] : "127.0.0.1:9090";
+  const char *unity_addr = (argc > 3) ? argv[3] : "192.168.20.52:9090";
 
   // ── LiDAR ────────────────────────────────────────────────────────
   ld19::Config cfg;
@@ -214,8 +219,8 @@ int main(int argc, char *argv[]) {
 
   // ── UDP 송신기 ───────────────────────────────────────────────────
   ld19::UdpSenderConfig uc;
-  std::string unity_ip = "192.168.10.175";
-  uint16_t unity_port = 5005;
+  std::string unity_ip = "192.168.20.52";
+  uint16_t unity_port = 9090;
   if (ParseIpPort(unity_addr, unity_ip, unity_port)) {
     uc.dest_ip = unity_ip;
     uc.dest_port = unity_port;

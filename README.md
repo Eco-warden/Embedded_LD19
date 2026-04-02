@@ -288,12 +288,12 @@ sudo ./build/ld19_lidar_app
 |------|--------|------|
 | argv[1] | `/dev/ttyAMA0` | LD19 GPIO UART 포트 |
 | argv[2] | `https://api.ecowarden.systems/api/dumping-event` | 이벤트 수신 API URL |
-| argv[3] | `127.0.0.1:9090` | Unity UDP 수신 주소 |
+| argv[3] | `192.168.20.52:9090` | Unity UDP 수신 주소 |
 
 커스텀 인자 예시:
 
 ```bash
-sudo ./build/ld19_lidar_app /dev/ttyAMA0 https://api.ecowarden.systems/api/dumping-event 192.168.1.20:9090
+sudo ./build/ld19_lidar_app /dev/ttyAMA0 https://api.ecowarden.systems/api/dumping-event 192.168.20.52:9090
 ```
 
 #### Step 6. 정상 동작 확인
@@ -437,7 +437,7 @@ Ctrl+C
 | HTTP 엔드포인트 | `https://api.ecowarden.systems/api/dumping-event` | 이벤트 수신 API |
 | HTTP 타임아웃 | 3,000ms | 요청당 최대 대기 시간 |
 | 재시도 간격 | 10초 | 실패 이벤트 자동 재전송 |
-| UDP 목적지 | `127.0.0.1:9090` | Unity 수신 주소 |
+| UDP 목적지 | `192.168.20.52:9090` | Unity 수신 주소 |
 
 ---
 

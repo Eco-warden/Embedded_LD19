@@ -113,7 +113,7 @@ JSON POST 전송            JSON UDP 전송
 | 이탈 판정 프레임 수 | 3프레임 | 이동 이력이 있는 객체가 연속 3프레임 정지 시 이탈(투기)로 판정 |
 | HTTP 엔드포인트 | `https://api.ecowarden.systems/api/dumping-event` | FastAPI 이벤트 수신 서버 |
 | HTTP 타임아웃 | 3000ms | libcurl 연결 + 응답 타임아웃 |
-| UDP 목적지 | `127.0.0.1:9000` | Unity 클라이언트 수신 주소 |
+| UDP 목적지 | `192.168.20.52:9090` | Unity 클라이언트 수신 주소 |
 | UDP 최대 패킷 크기 | 65507 bytes | UDP datagram 최대 payload, 초과 시 클러스터 자동 잘림 |
 
 ---
@@ -184,14 +184,14 @@ sudo ./build/ld19_lidar_app [시리얼포트] [FastAPI_URL] [Unity_IP:PORT]
 
 ```bash
 # 예시: 모든 옵션 지정
-sudo ./build/ld19_lidar_app /dev/ttyUSB0 http://192.168.1.10:8000/api/events 192.168.1.20:9000
+sudo ./build/ld19_lidar_app /dev/ttyUSB0 http://192.168.1.10:8000/api/events 192.168.20.52:9090
 ```
 
 | 인자 | 기본값 | 설명 |
 |---|---|---|
 | `argv[1]` | `/dev/ttyUSB0` | LD19 시리얼 포트 |
 | `argv[2]` | `https://api.ecowarden.systems/api/dumping-event` | FastAPI 이벤트 수신 엔드포인트 |
-| `argv[3]` | `127.0.0.1:9000` | Unity UDP 수신 주소 |
+| `argv[3]` | `192.168.20.52:9090` | Unity UDP 수신 주소 |
 
 ### 예시 출력
 
@@ -202,7 +202,7 @@ Filter     : 30 ~ 12000 mm
 DBSCAN     : eps=150mm, minPts=5
 Tracker    : stop=50mm, depart=3 frames
 HTTP API   : https://api.ecowarden.systems/api/dumping-event
-UDP Unity  : 127.0.0.1:9000
+UDP Unity  : 192.168.20.52:9090
 
 [INFO] LiDAR started. Press Ctrl+C to stop.
 
@@ -259,7 +259,7 @@ UDP Unity  : 127.0.0.1:9000
 
 매 프레임(10Hz) 전송됩니다.
 
-**목적지**: `127.0.0.1:9000`
+**목적지**: `192.168.20.52:9090`
 
 ```json
 {
@@ -386,7 +386,7 @@ sudo apt install build-essential
    ```
 4. **IP 주소 확인**: `127.0.0.1`은 로컬 전용. 다른 PC로 보내려면 해당 PC의 실제 IP를 지정
    ```bash
-   ./build/ld19_lidar_app /dev/ttyUSB0 https://api.ecowarden.systems/api/dumping-event 192.168.1.50:9000
+   ./build/ld19_lidar_app /dev/ttyUSB0 https://api.ecowarden.systems/api/dumping-event 192.168.20.52:9090
    ```
 5. **Unity 측 오류 로그**: Unity Console 창에서 `[LD19-JSON]` 로그 확인
 
