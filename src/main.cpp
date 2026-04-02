@@ -28,6 +28,11 @@
  *   sudo ./ld19_lidar_app [시리얼포트] [API_URL] [Unity_IP:PORT]
  */
 
+#ifndef __SANE_USERSPACE_TYPES__
+#define __SANE_USERSPACE_TYPES__
+#endif
+
+#include <cstdint>
 #include <cmath>
 #include <csignal>
 #include <cstdio>

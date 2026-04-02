@@ -15,6 +15,10 @@
  *   ./ld19_sim [API_URL]
  */
 
+#ifndef __SANE_USERSPACE_TYPES__
+#define __SANE_USERSPACE_TYPES__
+#endif
+
 #include <cstdint>
 #include <csignal>
 #include <cstdio>

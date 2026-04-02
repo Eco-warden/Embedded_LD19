@@ -44,10 +44,9 @@
 - **문제**: `__SANE_USERSPACE_TYPES__` 매크로 중복 정의 및 `uint64_t` 타입 불일치(`unsigned long` vs `unsigned long long`)로 인한 컴파일 에러 발생.
 - **원인**: 리눅스 커널 헤더와 유저 공간 헤더 간의 타입 정의 방식 충돌.
 - **해결 방법**:
-    1.  **CMake 전역 정의**: `CMakeLists.txt`에 `add_compile_options(-D__SANE_USERSPACE_TYPES__)`를 추가하여 빌드 시스템 차원에서 일관성 유지.
-    2.  **소스 코드 정리**: `src/sim_main.cpp` 등에서 개별적으로 선언된 `#define __SANE_USERSPACE_TYPES__` 제거.
-    3.  **헤더 포함 순서 최적화**: 표준 C++ 헤더(`<cstdint>`, `<csignal>` 등)를 시스템/커널 헤더보다 항상 먼저 포함하도록 조정.
-
+1.  **CMake 전역 정의**: `CMakeLists.txt`에 `add_compile_options(-D__SANE_USERSPACE_TYPES__)`를 추가하여 빌드 시스템 차원에서 일관성 유지.
+2.  **소스 코드 최상단 매크로 선언**: `src/main.cpp`, `src/sim_main.cpp` 등 주요 진입점 파일 최상단에 `#ifndef __SANE_USERSPACE_TYPES__` 트릭을 적용하여 헤더 포함 전 매크로 확정.
+3.  **헤더 포함 순서 강제 조정**: 표준 C++ 헤더(`<cstdint>`)를 시스템/커널 헤더(`<csignal>`, `<unistd.h>` 등)보다 항상 먼저 포함하도록 조정하여 `uint64_t` 타입 정의를 선점.
 ### B. 빌드 및 실행 권장 사양
 - **OS**: Linux (Ubuntu 20.04+ 권장, aarch64/x86_64)
 - **도구**: CMake 3.16+, GCC/G++ 9+
