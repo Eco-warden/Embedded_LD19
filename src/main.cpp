@@ -209,14 +209,14 @@ int main(int argc, char *argv[]) {
 
   // ── UDP 송신기 ───────────────────────────────────────────────────
   ld19::UdpSenderConfig uc;
-  std::string unity_ip;
-  uint16_t unity_port = 9090;
+  std::string unity_ip = "192.168.10.175";
+  uint16_t unity_port = 5005;
   if (ParseIpPort(unity_addr, unity_ip, unity_port)) {
     uc.dest_ip = unity_ip;
     uc.dest_port = unity_port;
   } else {
     uc.dest_ip = unity_addr;
-    uc.dest_port = 9090;
+    uc.dest_port = 5005;
   }
 
   ld19::UdpSender udp(uc);
