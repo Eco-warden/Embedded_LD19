@@ -32,11 +32,6 @@
 #define __SANE_USERSPACE_TYPES__
 #endif
 
-#include <stdint.h> // uint64_t 선언 선점
-#ifdef __arm64__
-#define __u64 uint64_t
-#endif
-
 #include <cstdint>
 #include <cmath>
 #include <csignal>
